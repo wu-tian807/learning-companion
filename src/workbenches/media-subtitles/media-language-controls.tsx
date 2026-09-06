@@ -39,7 +39,9 @@ function blockedDubbingLabel(
   subtitle: MediaSubtitleSnapshot,
   dubbing: MediaDubbingSnapshot,
 ): string {
-  if (!subtitle.source) return '等待字幕';
+  if (!subtitle.source) {
+    return subtitle.phase === 'failed' ? '字幕不可用' : '等待字幕';
+  }
   if (!subtitle.translation) {
     if (
       subtitle.phase === 'provider-required' ||
@@ -128,11 +130,15 @@ export function MediaLanguageControls({
     subtitleControl = (
       <button
         type="button"
-        title={subtitleSnapshot.message ?? '重新处理字幕'}
+        title={
+          subtitleSnapshot.sourceTrackRevision
+            ? '重试翻译'
+            : '重新转录原始媒体，成功后替换旧字幕；旧翻译和配音可能失效。'
+        }
         onClick={onRetrySubtitles}
         className={compactButtonClass}
       >
-        重试字幕
+        {subtitleSnapshot.sourceTrackRevision ? '重试翻译' : '重新生成字幕'}
       </button>
     );
   } else if (!subtitleHasSource) {

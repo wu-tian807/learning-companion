@@ -48,6 +48,7 @@ export interface AssetArtifactServiceApi {
   getOrCreate(
     request: AssetArtifactRequest,
     signal?: AbortSignal,
+    options?: { readonly forceRegenerate?: boolean },
   ): Promise<ResolvedAssetArtifact>;
 }
 
@@ -275,6 +276,7 @@ export class AssetArtifactService
   async getOrCreate(
     request: AssetArtifactRequest,
     signal?: AbortSignal,
+    options?: { readonly forceRegenerate?: boolean },
   ): Promise<ResolvedAssetArtifact> {
     if (signal?.aborted) {
       throw createAbortError();
@@ -282,7 +284,11 @@ export class AssetArtifactService
 
     const normalized = normalizeRequest(request);
     const producer = this.registry.require(normalized.producerId);
-    const cached = await this.resolveCached(normalized, producer);
+    // Regeneration replaces the index/file only after a successful production.
+    // Do not invalidate the previous artifact just to bypass a cache hit.
+    const cached = options?.forceRegenerate
+      ? undefined
+      : await this.resolveCached(normalized, producer);
 
     if (cached) {
       return cached;
@@ -298,7 +304,7 @@ export class AssetArtifactService
       }
 
       await this.waitForDifferentTask(activeTask.promise, signal);
-      return this.getOrCreate(normalized, signal);
+      return this.getOrCreate(normalized, signal, options);
     }
 
     const controller = new AbortController();

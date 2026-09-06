@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -119,6 +119,29 @@ async function produceTrack(
 }
 
 describe('MediaSubtitleTranscriptionProducer', () => {
+  it('validates the final track before writing a replacement artifact', async () => {
+    await inTemp(async (directory) => {
+      const run = vi.fn<ExternalCommandRunnerApi['run']>(async (command) => {
+        const output = command.args.indexOf('-of');
+        if (output >= 0) {
+          await writeFile(`${command.args[output + 1]}.json`, JSON.stringify({
+            result: { language: 'en' },
+            transcription: [{ offsets: { from: 0, to: 800 }, text: 'Hello' }],
+          }));
+        }
+        return { stdout: '', stderr: '' };
+      });
+      const instance = new MediaSubtitleTranscriptionProducer(
+        resolver(directory, whisper(directory)),
+        { now: () => Number.NaN, commandRunner: { run }, logicalCpuCount: 8 },
+      );
+      await expect(produceTrack(instance, directory, 'video/mp4')).rejects.toMatchObject({
+        code: 'MEDIA_SUBTITLE_PROCESSING_FAILED',
+      });
+      await expect(access(join(directory, 'subtitles.json'))).rejects.toMatchObject({ code: 'ENOENT' });
+    });
+  });
+
   it('restores Whisper video subtitles without speaker analysis', async () => {
     await inTemp(async (directory) => {
       const progress = new SubtitleTranscriptionProgressHub();

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -9,6 +9,11 @@ import type {
   AssetArtifactServiceApi,
   ResolvedAssetArtifact,
 } from '../../main/artifacts/asset-artifact-service';
+import { AssetArtifactService } from '../../main/artifacts/asset-artifact-service';
+import { AssetArtifactFileManager } from '../../main/artifacts/asset-artifact-file-manager';
+import { AssetArtifactRegistry } from '../../main/artifacts/asset-artifact-registry';
+import type { AssetArtifact, AssetArtifactKey } from '../../main/artifacts/asset-artifact';
+import { createMediaSubtitleSourceArtifactRequest } from './subtitle-source-artifact';
 import type { AssetServiceApi } from '../../main/assets/asset-service';
 import type { ProjectLookup } from '../../main/projects/project-database';
 import type { GenerationTaskServiceApi } from '../../main/generation/generation-task-service';
@@ -156,6 +161,7 @@ async function serviceWithSource(
   tasks: GenerationTaskServiceApi = generationTasks(),
   transcriptionProgress?: SubtitleTranscriptionProgressHub,
   onSourceRequest?: (request: AssetArtifactRequest) => void,
+  artifactService?: AssetArtifactServiceApi,
 ) {
   const videoPath = join(directory, 'video.mp4');
   const sourcePath = join(directory, 'source.json');
@@ -199,13 +205,15 @@ async function serviceWithSource(
   const srt = srtProducer();
   const translationProgress = new SubtitleTranslationProgressHub();
   return {
+    assets,
+    projects,
     getOrCreate,
     srt,
     translationProgress,
     service: new MediaSubtitleService(
       assets,
       projects,
-      {
+      artifactService ?? {
         listAvailableByAsset: vi.fn(async () => []),
         getCached: vi.fn(),
         getOrCreate,
@@ -223,6 +231,83 @@ async function serviceWithSource(
 }
 
 describe('MediaSubtitleService', () => {
+  it('keeps translation retries cache-aware instead of retranscribing a valid source', async () => {
+    await withDirectory(async (directory) => {
+      const { service, getOrCreate } = await serviceWithSource(directory, 'en');
+      await service.ensureSource('project', 'video');
+      getOrCreate.mockClear();
+      await service.retry('project', 'video');
+      expect(getOrCreate).toHaveBeenCalledOnce();
+      expect(getOrCreate.mock.calls[0]).toHaveLength(1);
+    });
+  });
+
+  it('retries corrupt cached subtitles through real Artifact replacement without auto translation', async () => {
+    await withDirectory(async (directory) => {
+      const records = new Map<string, AssetArtifact>();
+      const key = (value: AssetArtifactKey) => JSON.stringify([
+        value.assetId, value.producerId, value.artifactKey,
+      ]);
+      const registry = new AssetArtifactRegistry();
+      let corrupt = true;
+      let fail = false;
+      const produce = vi.fn(async (request: { stagingDirectory: string; source: { revision: string } }) => {
+        if (fail) throw new Error('transcription failed');
+        const track = sourceTrack('en');
+        const filePath = join(request.stagingDirectory, 'source.json');
+        await writeFile(filePath, JSON.stringify({
+          ...track,
+          sourceRevision: request.source.revision,
+          cues: corrupt ? [{ ...track.cues[0], endMs: 0 }] : track.cues,
+        }));
+        return { filePath, mediaType: SUBTITLE_SOURCE_ARTIFACT_MEDIA_TYPE, extension: 'json' };
+      });
+      registry.register({ id: MEDIA_SUBTITLE_TRANSCRIPTION_PRODUCER_ID, version: '7', produce });
+      registry.register(new MediaSubtitleTranslationProducer());
+      const artifacts = new AssetArtifactService({
+        get: (value) => records.get(key(value)),
+        upsert: (value) => { records.set(key(value), value); return value; },
+        listByAsset: (assetId) => [...records.values()].filter((value) => value.assetId === assetId),
+        listByProject: () => [...records.values()],
+        delete: (value) => { records.delete(key(value)); },
+        deleteByAsset: vi.fn(),
+        deleteByProject: vi.fn(),
+      }, new AssetArtifactFileManager(), registry);
+      const tasks = generationTasks();
+      const { service, assets, projects, srt } = await serviceWithSource(
+        directory, 'en', tasks, undefined, undefined, artifacts,
+      );
+      const request = await createMediaSubtitleSourceArtifactRequest(assets, projects, 'project', 'video');
+      const old = await artifacts.getOrCreate(request);
+      await service.ensureSource('project', 'video');
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'failed', message: expect.stringContaining('重新生成字幕'),
+      });
+      expect(produce).toHaveBeenCalledTimes(1);
+      // A failed attempt must not remove the old record or file.
+      fail = true;
+      await service.retry('project', 'video');
+      expect(service.getSnapshot('video').phase).toBe('failed');
+      await expect(access(old.absolutePath)).resolves.toBeUndefined();
+      expect(records.get(key(request))).toEqual(old.artifact);
+      fail = false;
+      corrupt = false;
+      await Promise.all([service.retry('project', 'video'), service.retry('project', 'video')]);
+      expect(produce).toHaveBeenCalledTimes(3);
+      expect(service.getSnapshot('video')).toMatchObject({ phase: 'source-ready' });
+      expect(srt.materialize).toHaveBeenCalledOnce();
+      expect(tasks.start).not.toHaveBeenCalled();
+      expect(service.getSnapshot('video').translation).toBeUndefined();
+      await expect(access(old.absolutePath)).rejects.toMatchObject({ code: 'ENOENT' });
+      await service.ensureSource('project', 'video');
+      expect(produce).toHaveBeenCalledTimes(3);
+      const reopened = await serviceWithSource(directory, 'en', tasks, undefined, undefined, artifacts);
+      await reopened.service.ensureSource('project', 'video');
+      expect(reopened.service.getSnapshot('video').phase).toBe('source-ready');
+      expect(produce).toHaveBeenCalledTimes(3);
+    });
+  });
+
   it('publishes completed source chunks before the final artifact is committed', async () => {
     await withDirectory(async (directory) => {
       const progress = new SubtitleTranscriptionProgressHub();

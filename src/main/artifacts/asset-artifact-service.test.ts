@@ -160,6 +160,76 @@ afterEach(async () => {
 });
 
 describe('AssetArtifactService', () => {
+  it('regenerates a cache hit once and only replaces the old file after success', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let runs = 0;
+    const produce = vi.fn<AssetArtifactProducer['produce']>(async (request) => {
+      runs += 1;
+      if (runs > 1) await gate;
+      const filePath = join(request.stagingDirectory, 'preview.pdf');
+      await writeFile(filePath, `run-${runs}`);
+      return { filePath, mediaType: 'application/pdf', extension: 'pdf' };
+    });
+    const harness = await createHarness(createProducer(produce));
+    const request = createRequest(harness);
+    const old = await harness.service.getOrCreate(request);
+    const first = harness.service.getOrCreate(request, undefined, { forceRegenerate: true });
+    const second = harness.service.getOrCreate(request, undefined, { forceRegenerate: true });
+    await vi.waitFor(() => expect(produce).toHaveBeenCalledTimes(2));
+    expect(harness.database.get(request)).toEqual(old.artifact);
+    await expect(access(old.absolutePath)).resolves.toBeUndefined();
+    release();
+    const [replacement, duplicate] = await Promise.all([first, second]);
+    expect(replacement).toEqual(duplicate);
+    expect(replacement.cacheHit).toBe(false);
+    expect(replacement.artifact.artifactRevision).not.toBe(old.artifact.artifactRevision);
+    expect(harness.database.get(request)).toEqual(replacement.artifact);
+    await expect(access(old.absolutePath)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(harness.service.getOrCreate(request)).resolves.toMatchObject({
+      cacheHit: true, absolutePath: replacement.absolutePath,
+    });
+    expect(produce).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(['produce', 'index', 'cancel'] as const)(
+    'preserves the previous cached artifact after regeneration %s failure',
+    async (failure) => {
+      const produce = vi.fn<AssetArtifactProducer['produce']>(async (request) => {
+        const filePath = join(request.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, 'old');
+        return { filePath, mediaType: 'application/pdf', extension: 'pdf' };
+      });
+      const harness = await createHarness(createProducer(produce));
+      const request = createRequest(harness);
+      const old = await harness.service.getOrCreate(request);
+      const committed = vi.fn();
+      harness.service.subscribe(committed);
+      const controller = new AbortController();
+      produce.mockImplementationOnce(async (input, signal) => {
+        if (failure === 'produce') throw new Error('generation failed');
+        if (failure === 'cancel') {
+          controller.abort();
+          signal.throwIfAborted();
+        }
+        const filePath = join(input.stagingDirectory, 'preview.pdf');
+        await writeFile(filePath, 'new');
+        return { filePath, mediaType: 'application/pdf', extension: 'pdf' };
+      });
+      if (failure === 'index') {
+        vi.spyOn(harness.database, 'upsert').mockImplementationOnce(() => {
+          throw new Error('index failed');
+        });
+      }
+      await expect(harness.service.getOrCreate(request, controller.signal, {
+        forceRegenerate: true,
+      })).rejects.toThrow();
+      expect(harness.database.get(request)).toEqual(old.artifact);
+      await expect(access(old.absolutePath)).resolves.toBeUndefined();
+      expect(committed).not.toHaveBeenCalled();
+    },
+  );
+
   it('projects only committed generations to the owner Asset', async () => {
     const now = vi.fn().mockReturnValueOnce(2).mockReturnValue(3);
     const harness = await createHarness(
