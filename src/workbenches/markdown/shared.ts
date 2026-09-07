@@ -24,6 +24,7 @@ export const MARKDOWN_IMAGE_TARGET_TYPE = 'markdown.image-source';
 export const MARKDOWN_IMAGE_TARGET_VERSION = 1;
 export const MARKDOWN_STATE_SCHEMA_VERSION = 1;
 export const MARKDOWN_RECOVERY_DATA_KEY = 'recovery-content';
+export const MARKDOWN_CONFLICT_RECOVERY_DATA_KEY = 'conflict-recovery-content';
 export const MARKDOWN_IMAGE_DIRECTORY = 'images';
 export const MARKDOWN_MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 
@@ -69,6 +70,15 @@ export type MarkdownRecoveryState = {
 
 export type MarkdownWorkbenchStateV1 = MarkdownWorkbenchViewState & {
   readonly recovery?: MarkdownRecoveryState;
+  readonly conflictRecoveries?: readonly MarkdownConflictRecoveryState[];
+};
+export type MarkdownConflictRecoveryState = Omit<
+  MarkdownRecoveryState,
+  'dataKey'
+> & {
+  readonly dataKey: string;
+  readonly conflictId: string;
+  readonly sharedDocumentVersion: number;
 };
 
 export type MarkdownRecoveryBootstrap = {
@@ -80,6 +90,11 @@ export type MarkdownRecoveryBootstrap = {
   readonly editedFrom: MarkdownEditMode;
   readonly updatedTime: number;
   readonly sourceChanged: boolean;
+};
+export type MarkdownConflictRecoveryBootstrap = MarkdownRecoveryBootstrap & {
+  readonly conflictId: string;
+  readonly sharedContent: string;
+  readonly sharedDocumentVersion: number;
 };
 
 export type MarkdownWorkbenchPayload = {
@@ -95,6 +110,7 @@ export type MarkdownWorkbenchPayload = {
   readonly documentVersion?: number;
   readonly state: MarkdownWorkbenchViewState;
   readonly recovery?: MarkdownRecoveryBootstrap;
+  readonly conflictRecovery?: MarkdownConflictRecoveryBootstrap;
 };
 
 export type MarkdownSourceBufferPayload = {
@@ -214,6 +230,7 @@ export const markdownCommands = {
   setLineEnding: 'markdown:set-line-ending',
   reopenWithEncoding: 'markdown:reopen-with-encoding',
   discardRecovery: 'markdown:discard-recovery',
+  backupConflict: 'markdown:backup-conflict',
   insertImage: 'markdown:insert-image',
   readImage: 'markdown:read-image',
 } as const;

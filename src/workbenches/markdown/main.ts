@@ -39,6 +39,7 @@ import {
   isMarkdownWorkbenchViewStatePayload,
   isMarkdownWysiwygBufferPayload,
   MARKDOWN_RECOVERY_DATA_KEY,
+  MARKDOWN_CONFLICT_RECOVERY_DATA_KEY,
   MARKDOWN_STATE_SCHEMA_VERSION,
   MARKDOWN_WORKBENCH_ID,
   MARKDOWN_IMAGE_DIRECTORY,
@@ -52,6 +53,7 @@ import {
   type MarkdownEditMode,
   type MarkdownLineEnding,
   type MarkdownRecoveryState,
+  type MarkdownConflictRecoveryState,
   type MarkdownWorkbenchStateV1,
   type MarkdownWorkbenchViewState,
 } from './shared';
@@ -90,6 +92,7 @@ interface MarkdownDocumentRuntime {
   lastWriterSessionId: string | undefined;
   lastWriterUpdateId: number;
   readonly sessionIds: Set<string>;
+  conflictRecoveries: MarkdownConflictRecoveryState[];
   writeTask: Promise<void>;
 }
 
@@ -141,6 +144,9 @@ function toJsonState(state: MarkdownWorkbenchStateV1): JsonValue {
     ...cloneMarkdownWorkbenchViewState(state),
     ...(state.recovery
       ? { recovery: cloneRecoveryState(state.recovery) }
+      : {}),
+    ...(state.conflictRecoveries
+      ? { conflictRecoveries: state.conflictRecoveries }
       : {}),
   };
 }
@@ -223,6 +229,17 @@ export class MarkdownWorkbenchProvider
       document,
     });
     document.sessionIds.add(context.sessionId);
+    const conflict = document.conflictRecoveries.at(-1);
+    const conflictData = conflict
+      ? await this.dataDatabase.get(
+          context.asset.id,
+          MARKDOWN_WORKBENCH_ID,
+          conflict.dataKey,
+        )
+      : undefined;
+    const conflictContent = conflictData
+      ? new TextDecoder('utf-8').decode(conflictData.data)
+      : undefined;
 
     return {
       payload: {
@@ -254,6 +271,23 @@ export class MarkdownWorkbenchProvider
               },
             }
           : {}),
+        ...(conflict && conflictContent !== undefined
+          ? {
+              conflictRecovery: {
+                content: conflictContent,
+                baseRevision: conflict.baseRevision,
+                encoding: conflict.encoding,
+                lineEnding: conflict.lineEnding,
+                hasByteOrderMark: conflict.hasByteOrderMark,
+                editedFrom: conflict.editedFrom,
+                updatedTime: conflict.updatedTime,
+                sourceChanged: true,
+                conflictId: conflict.conflictId,
+                sharedContent: document.workingBuffer,
+                sharedDocumentVersion: document.documentVersion,
+              },
+            }
+          : {}),
       },
     };
   }
@@ -274,7 +308,7 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        this.acceptDocumentBuffer(
+        await this.acceptDocumentBuffer(
           runtime,
           command.payload.content,
           command.payload.lineEnding,
@@ -295,7 +329,7 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        this.acceptDocumentBuffer(
+        await this.acceptDocumentBuffer(
           runtime,
           command.payload.content,
           command.payload.lineEnding,
@@ -537,6 +571,7 @@ export class MarkdownWorkbenchProvider
       lastWriterSessionId: undefined,
       lastWriterUpdateId: 0,
       sessionIds: new Set(),
+      conflictRecoveries: [...(state.conflictRecoveries ?? [])],
       writeTask: Promise.resolve(),
     };
     this.documents.set(assetId, document);
@@ -570,14 +605,14 @@ export class MarkdownWorkbenchProvider
     return task;
   }
 
-  private acceptDocumentBuffer(
+  private async acceptDocumentBuffer(
     runtime: MarkdownSessionRuntime,
     content: string,
     lineEnding: MarkdownLineEnding,
     editedFrom: MarkdownEditMode,
     baseDocumentVersion: number | undefined,
     updateId: number | undefined,
-  ): void {
+  ): Promise<void> {
     const document = runtime.document;
     // New renderers identify every optimistic edit. A late writer may append
     // only to its own immediately preceding version; otherwise it must retain
@@ -593,6 +628,7 @@ export class MarkdownWorkbenchProvider
         updateId > document.lastWriterUpdateId
       )
     ) {
+      await this.persistConflictRecovery(runtime, content, lineEnding, editedFrom);
       throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
     }
     document.workingBuffer = content;
@@ -626,6 +662,34 @@ export class MarkdownWorkbenchProvider
         },
       });
     }
+  }
+
+  private async persistConflictRecovery(
+    runtime: MarkdownSessionRuntime,
+    content: string,
+    lineEnding: MarkdownLineEnding,
+    editedFrom: MarkdownEditMode,
+  ): Promise<void> {
+    const document = runtime.document;
+    const updatedTime = this.now();
+    const conflictId = runtime.sessionId + ':' + updatedTime;
+    const dataKey = MARKDOWN_CONFLICT_RECOVERY_DATA_KEY + ':' + conflictId;
+    const recovery: MarkdownConflictRecoveryState = {
+      dataKey, conflictId, baseRevision: document.source.revision,
+      encoding: document.source.encoding, lineEnding,
+      hasByteOrderMark: document.source.hasByteOrderMark, editedFrom,
+      updatedTime, sharedDocumentVersion: document.documentVersion,
+    };
+    await this.dataDatabase.save({
+      assetId: document.assetId, workbenchId: MARKDOWN_WORKBENCH_ID,
+      dataKey, data: new TextEncoder().encode(content), updatedTime,
+    });
+    document.conflictRecoveries = [...document.conflictRecoveries, recovery];
+    await this.saveState(document.assetId, {
+      ...runtime.viewState,
+      ...(document.recovery ? { recovery: document.recovery } : {}),
+      conflictRecoveries: document.conflictRecoveries,
+    });
   }
 
   private validateCommand(
@@ -830,6 +894,9 @@ export class MarkdownWorkbenchProvider
     return {
       ...cloneMarkdownWorkbenchViewState(record.payload),
       recovery: record.payload.recovery,
+      ...(record.payload.conflictRecoveries
+        ? { conflictRecoveries: record.payload.conflictRecoveries }
+        : {}),
     };
   }
 
@@ -926,7 +993,13 @@ export class MarkdownWorkbenchProvider
       updatedTime,
     });
     document.recovery = recovery;
-    await this.saveState(document.assetId, { ...viewState, recovery });
+    await this.saveState(document.assetId, {
+      ...viewState,
+      recovery,
+      ...(document.conflictRecoveries.length > 0
+        ? { conflictRecoveries: document.conflictRecoveries }
+        : {}),
+    });
     return updatedTime;
   }
 
@@ -1026,6 +1099,9 @@ export class MarkdownWorkbenchProvider
       ...runtime.viewState,
       ...(runtime.document.recovery
         ? { recovery: runtime.document.recovery }
+        : {}),
+      ...(runtime.document.conflictRecoveries.length > 0
+        ? { conflictRecoveries: runtime.document.conflictRecoveries }
         : {}),
     });
   }
