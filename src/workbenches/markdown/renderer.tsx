@@ -40,10 +40,12 @@ import {
 } from '../document-ai/renderer/conversation/document-target-reveal';
 import {
   registerWorkbenchTargetController,
+  selectAndRevealWorkbenchTarget,
 } from '../../renderer/workbench/host/workbench-target-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import type { AssetTarget } from '../../shared/workbench/asset-target';
+import { parseWorkbenchLocationHref } from '../../shared/workbench/location-reference';
 import {
   createTextRangeTarget,
   resolveTextRangeSelection,
@@ -294,6 +296,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     onReveal,
     onInteractionChange,
     onOpenExternal,
+    onSelectAsset,
     onError,
     attachments,
     refreshAttachments,
@@ -573,6 +576,50 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [executeCommand],
   );
 
+  const locationNavigationRef = useRef<AbortController | undefined>(undefined);
+  useEffect(
+    () => () => {
+      locationNavigationRef.current?.abort(
+        new DOMException('Markdown 视口已关闭。', 'AbortError'),
+      );
+    },
+    [],
+  );
+  const openWorkbenchLocation = useCallback(
+    async (href: string) => {
+      const reference = parseWorkbenchLocationHref(href);
+      if (!reference || reference.projectId !== asset.projectId) {
+        throw new Error('这条位置引用不属于当前 Project。');
+      }
+      if (!onSelectAsset) {
+        throw new Error('当前 Markdown 视口不能打开引用资料。');
+      }
+      locationNavigationRef.current?.abort(
+        new DOMException('已开始新的 Markdown 定位。', 'AbortError'),
+      );
+      const controller = new AbortController();
+      locationNavigationRef.current = controller;
+      try {
+        await selectAndRevealWorkbenchTarget({
+          assetId: reference.assetId,
+          target: reference.target,
+          ...(reference.sourceRevision
+            ? { sourceRevision: reference.sourceRevision }
+            : {}),
+          selectAsset: onSelectAsset,
+          signal: controller.signal,
+          timeoutMs: 10_000,
+          emphasize: true,
+        });
+      } finally {
+        if (locationNavigationRef.current === controller) {
+          locationNavigationRef.current = undefined;
+        }
+      }
+    },
+    [asset.projectId, onSelectAsset],
+  );
+
   const resolvePickedImageMediaType = useCallback(
     (file: File) => {
       if (isSupportedMarkdownImageMediaType(file.type)) {
@@ -701,6 +748,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     onOpenExternal: (url) => {
       void onOpenExternal(url).catch((error) => {
         reportError(error, '无法打开外部链接。');
+      });
+    },
+    isInternalLinkAllowed: (href) =>
+      parseWorkbenchLocationHref(href)?.projectId === asset.projectId,
+    onOpenInternalLink: (href) => {
+      void openWorkbenchLocation(href).catch((error) => {
+        reportError(error, '无法定位 Markdown 中的资料引用。');
       });
     },
     readLocalImageSource: readMarkdownImageDataUrl,
