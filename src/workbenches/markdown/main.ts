@@ -71,6 +71,7 @@ interface MarkdownSessionRuntime {
   readonly assetDirectory?: string;
   viewState: MarkdownWorkbenchViewState;
   readonly document: MarkdownDocumentRuntime;
+  readonly conflictIds: Set<string>;
 }
 
 /**
@@ -228,6 +229,7 @@ export class MarkdownWorkbenchProvider
       ...(assetDirectory ? { assetDirectory } : {}),
       viewState,
       document,
+      conflictIds: new Set(),
     });
     document.sessionIds.add(context.sessionId);
     const conflict = document.conflictRecoveries.at(-1);
@@ -365,10 +367,19 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
         if (payload.expectedDocumentVersion !== document.documentVersion) {
+          await this.persistConflictRecovery(
+            runtime,
+            payload.content,
+            document.currentLineEnding,
+            runtime.viewState.viewMode,
+          );
           throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
         }
         document.workingBuffer = payload.content;
         document.documentVersion += 1;
+        document.lastWriterSessionId = undefined;
+        document.lastWriterUpdateId = 0;
+        runtime.conflictIds.delete(payload.conflictId);
         this.publishDocumentChange(document);
         return createResult(await this.readConflictState(document));
       }
@@ -378,6 +389,7 @@ export class MarkdownWorkbenchProvider
           !document.conflictRecoveries.some((item) => item.conflictId === payload.conflictId)) {
           throw new AppError('INVALID_IPC_REQUEST');
         }
+        runtime.conflictIds.delete(payload.conflictId);
         return createResult(await this.readConflictState(document));
       }
       case markdownCommands.backup: {
@@ -649,6 +661,10 @@ export class MarkdownWorkbenchProvider
     updateId: number | undefined,
   ): Promise<void> {
     const document = runtime.document;
+    if (runtime.conflictIds.size > 0) {
+      await this.persistConflictRecovery(runtime, content, lineEnding, editedFrom);
+      throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
+    }
     // New renderers identify every optimistic edit. A late writer may append
     // only to its own immediately preceding version; otherwise it must retain
     // a conflict draft instead of replacing another viewport's full buffer.
@@ -720,6 +736,7 @@ export class MarkdownWorkbenchProvider
       dataKey, data: new TextEncoder().encode(content), updatedTime,
     });
     document.conflictRecoveries = [...document.conflictRecoveries, recovery];
+    runtime.conflictIds.add(conflictId);
     await this.saveState(document.assetId, {
       ...runtime.viewState,
       ...(document.recovery ? { recovery: document.recovery } : {}),
@@ -1144,7 +1161,12 @@ export class MarkdownWorkbenchProvider
       nextState,
       state.conflictRecoveries ?? [],
     );
-    return nextState;
+    return {
+      ...nextState,
+      ...(state.conflictRecoveries
+        ? { conflictRecoveries: state.conflictRecoveries }
+        : {}),
+    };
   }
 
   private async clearRecovery(
