@@ -146,6 +146,20 @@ describe('WorkbenchConversationRuntime', () => {
     });
   });
 
+  it('keeps a second Workbench contribution resolvable after another viewport unmounts', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const first = contribution('pdf');
+    const second = contribution('image');
+    const removeFirst = runtime.register('material.viewport', 'asset-pdf', first);
+    runtime.register('notebook.viewport', 'asset-image', second);
+
+    removeFirst();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(runtime.resolveContribution(source('image', 'asset-image'))).toBe(second);
+    expect(runtime.resolveContribution(source('pdf', 'asset-pdf'))).toBeUndefined();
+  });
+
   it('clears only transient context when its Workbench unmounts', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const unregister = runtime.register(

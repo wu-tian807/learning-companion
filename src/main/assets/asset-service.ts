@@ -37,6 +37,9 @@ import {
   detectAssetMediaType,
   isAssetRelinkMediaCompatible,
 } from './asset-media-type';
+import { randomUUID } from 'node:crypto';
+
+export const MARKDOWN_ASSET_MEDIA_TYPE = 'text/markdown';
 
 export interface AssetServiceApi {
   loadFromProject(projectId: string): Promise<readonly AssetSnapshot[]>;
@@ -72,6 +75,11 @@ export interface AssetServiceApi {
     projectId: string,
     input: StageGeneratedAssetFileInput,
   ): Promise<StagedGeneratedAsset>;
+  /** Creates a managed empty Markdown Asset without involving generation or AI. */
+  createMarkdownNote(
+    projectId: string,
+    name?: string,
+  ): Promise<AssetSnapshot>;
   update(
     assetId: string,
     changes: UpdateAssetInput,
@@ -599,6 +607,7 @@ export class AssetService implements AssetServiceApi {
       });
       const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(asset.id, snapshot);
+      this.publishChanged(snapshot);
 
       return Object.freeze({
         asset: cloneAssetSnapshot(snapshot),
@@ -622,6 +631,31 @@ export class AssetService implements AssetServiceApi {
     } finally {
       await resolved?.handle?.close();
     }
+  }
+
+  async createMarkdownNote(
+    projectId: string,
+    name = '新建笔记',
+  ): Promise<AssetSnapshot> {
+    const normalizedName = name.trim();
+    // The display name may intentionally duplicate another note.  The managed
+    // filename must not: generated storage is an implementation detail and
+    // receives an opaque id rather than using user-controlled text.
+    if (!normalizedName || [...normalizedName].length > 160) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+    const staged = await this.stageGeneratedFile(projectId, {
+      fileName: `note-${randomUUID()}.md`,
+      name: normalizedName,
+      mediaType: MARKDOWN_ASSET_MEDIA_TYPE,
+      content: new Uint8Array(),
+    });
+    if (!staged.created) {
+      // UUID collisions are not a normal idempotency path.  Returning another
+      // note would violate the new-note contract, so fail explicitly.
+      throw new AppError('REGISTRATION_CONFLICT');
+    }
+    return staged.asset;
   }
 
   update(

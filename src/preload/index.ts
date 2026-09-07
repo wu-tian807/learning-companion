@@ -281,6 +281,8 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     invoke<AddLocalAssetsResult>(IPC_CHANNELS.addLocalAssets, request),
   renameAsset: (request: RenameAssetRequest) =>
     invoke<AssetSnapshot>(IPC_CHANNELS.renameAsset, request),
+  createMarkdownNote: (request) =>
+    invoke<AssetSnapshot>(IPC_CHANNELS.createMarkdownNote, request),
   relinkAsset: (request: RelinkAssetRequest) =>
     invoke<AssetSnapshot>(IPC_CHANNELS.relinkAsset, request),
   deleteAssets: (request: DeleteAssetsRequest) =>

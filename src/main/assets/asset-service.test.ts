@@ -781,6 +781,41 @@ describe('AssetService', () => {
     );
   });
 
+  it('creates a collision-safe managed Markdown Asset without a generation task', async () => {
+    const database = createDatabase([]);
+    const { registry } = createResolver();
+    const contentRef = createProjectWorkspaceContentRef(
+      '.learning-companion/assets/generated/note-unique.md',
+    );
+    const createGeneratedFile = vi.fn(async () => ({
+      contentRef,
+      absolutePath:
+        '/tmp/project/.learning-companion/assets/generated/note-unique.md',
+      created: true,
+    }));
+    const service = createService(
+      database,
+      registry,
+      { detectMediaType: vi.fn(async () => 'text/markdown') },
+      { createGeneratedFile },
+    );
+    await service.loadFromProject('project');
+
+    const note = await service.createMarkdownNote('project', '新建笔记');
+
+    expect(note).toMatchObject({
+      id: 'created',
+      name: '新建笔记',
+      mediaType: 'text/markdown',
+      creationKind: 'generated',
+    });
+    expect(createGeneratedFile).toHaveBeenCalledWith(
+      '/tmp/project',
+      expect.stringMatching(/^note-[0-9a-f-]+\.md$/u),
+      new Uint8Array(),
+    );
+  });
+
   it('removes the Workspace-owned copy when deleting an imported Asset', async () => {
     const copiedRef = createProjectWorkspaceContentRef(
       '.learning-companion/assets/imported/lecture.pdf',

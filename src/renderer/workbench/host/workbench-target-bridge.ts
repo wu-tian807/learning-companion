@@ -25,7 +25,13 @@ interface Registration {
 }
 
 const listeners = new Set<() => void>();
-let active: Registration | undefined;
+/**
+ * Controllers are visual-instance registrations, not an Asset-global singleton.
+ * The asset-only lookup remains as a legacy fallback while callers migrate to
+ * an explicit owner (normally the source viewport/session).
+ */
+const registrationsByAsset = new Map<string, Map<string, Registration>>();
+const latestOwnerByAsset = new Map<string, string>();
 
 function publish(): void {
   for (const listener of [...listeners]) listener();
@@ -45,33 +51,58 @@ export function registerWorkbenchTargetController(
     throw new Error('Workbench Target controller 无效');
   }
   const token = Symbol(normalizedOwnerId);
-  active = { token, assetId: normalizedAssetId, controller };
+  const registration = { token, assetId: normalizedAssetId, controller };
+  const registrations = registrationsByAsset.get(normalizedAssetId) ?? new Map();
+  registrations.set(normalizedOwnerId, registration);
+  registrationsByAsset.set(normalizedAssetId, registrations);
+  latestOwnerByAsset.set(normalizedAssetId, normalizedOwnerId);
   publish();
 
   return () => {
     queueMicrotask(() => {
-      if (active?.token !== token) return;
-      active = undefined;
+      const current = registrationsByAsset
+        .get(normalizedAssetId)
+        ?.get(normalizedOwnerId);
+      if (current?.token !== token) return;
+      const entries = registrationsByAsset.get(normalizedAssetId);
+      entries?.delete(normalizedOwnerId);
+      if (entries?.size === 0) registrationsByAsset.delete(normalizedAssetId);
+      if (latestOwnerByAsset.get(normalizedAssetId) === normalizedOwnerId) {
+        const replacement = entries?.keys().next().value as string | undefined;
+        if (replacement) latestOwnerByAsset.set(normalizedAssetId, replacement);
+        else latestOwnerByAsset.delete(normalizedAssetId);
+      }
       publish();
     });
   };
 }
 
-function current(assetId: string): WorkbenchTargetController | undefined {
-  return active?.assetId === assetId.trim() ? active.controller : undefined;
+function current(
+  assetId: string,
+  ownerId?: string,
+): WorkbenchTargetController | undefined {
+  const normalizedAssetId = assetId.trim();
+  const normalizedOwnerId = ownerId?.trim();
+  const registrations = registrationsByAsset.get(normalizedAssetId);
+  const registration = normalizedOwnerId
+    ? registrations?.get(normalizedOwnerId)
+    : registrations?.get(latestOwnerByAsset.get(normalizedAssetId) ?? '');
+  return registration?.controller;
 }
 
 export function resolveWorkbenchTarget(
   assetId: string,
   target: AssetTarget,
+  ownerId?: string,
 ): WorkbenchTargetRect | undefined {
-  return current(assetId)?.resolve?.(target);
+  return current(assetId, ownerId)?.resolve?.(target);
 }
 
 export function getWorkbenchTargetSourceRevision(
   assetId: string,
+  ownerId?: string,
 ): string | undefined {
-  return current(assetId)?.sourceRevision;
+  return current(assetId, ownerId)?.sourceRevision;
 }
 
 export async function revealWorkbenchTarget(
@@ -79,8 +110,9 @@ export async function revealWorkbenchTarget(
   target: AssetTarget,
   sourceRevision?: string,
   emphasize = false,
+  ownerId?: string,
 ): Promise<void> {
-  const controller = current(assetId);
+  const controller = current(assetId, ownerId);
   if (!controller) throw new Error('目标资料尚未准备好，无法定位原文。');
   // Selecting the Asset already reveals an asset-scoped Target. It has no
   // content position whose revision could become stale.
@@ -101,9 +133,10 @@ export function waitForWorkbenchTargetController(
   assetId: string,
   signal: AbortSignal,
   timeoutMs = 10_000,
+  ownerId?: string,
 ): Promise<void> {
   if (signal.aborted) return Promise.reject(signal.reason);
-  if (current(assetId)) return Promise.resolve();
+  if (current(assetId, ownerId)) return Promise.resolve();
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (error?: Error) => {
@@ -116,7 +149,7 @@ export function waitForWorkbenchTargetController(
       else resolve();
     };
     const check = () => {
-      if (current(assetId)) finish();
+      if (current(assetId, ownerId)) finish();
     };
     const abort = () => finish(
       signal.reason instanceof Error
@@ -141,6 +174,7 @@ export async function selectAndRevealWorkbenchTarget({
   signal,
   timeoutMs,
   emphasize,
+  ownerId,
 }: {
   readonly assetId: string;
   readonly target: AssetTarget;
@@ -149,17 +183,20 @@ export async function selectAndRevealWorkbenchTarget({
   readonly signal: AbortSignal;
   readonly timeoutMs?: number;
   readonly emphasize?: boolean;
+  /** Source visual Workbench registration. Required by new multi-viewport callers. */
+  readonly ownerId?: string;
 }): Promise<void> {
   if (signal.aborted) throw signal.reason;
   await selectAsset(assetId);
   if (signal.aborted) throw signal.reason;
   if (target.scope === 'asset') return;
-  await waitForWorkbenchTargetController(assetId, signal, timeoutMs);
+  await waitForWorkbenchTargetController(assetId, signal, timeoutMs, ownerId);
   if (signal.aborted) throw signal.reason;
-  await revealWorkbenchTarget(assetId, target, sourceRevision, emphasize);
+  await revealWorkbenchTarget(assetId, target, sourceRevision, emphasize, ownerId);
 }
 
 export function resetWorkbenchTargetControllerForTests(): void {
-  active = undefined;
+  registrationsByAsset.clear();
+  latestOwnerByAsset.clear();
   listeners.clear();
 }

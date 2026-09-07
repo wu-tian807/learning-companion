@@ -57,6 +57,8 @@ export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
   private readonly pendingLaunches = new Map<number, PendingLaunch>();
   private activeRegistration: ActiveRegistration | undefined;
+  /** All mounted Workbench sources, keyed by their visual owner. */
+  private readonly registrations = new Map<string, ActiveRegistration>();
   private launchId = 0;
   private revealAbortController: AbortController | undefined;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
@@ -92,22 +94,30 @@ export class WorkbenchConversationRuntime {
       assetId: normalizedAssetId,
       contribution,
     });
-    this.activeRegistration = Object.freeze({
+    const registration = Object.freeze({
       token,
       ownerId: normalizedOwnerId,
       source,
     });
+    this.registrations.set(normalizedOwnerId, registration);
+    this.activeRegistration = registration;
     this.update({ ...this.snapshot, active: source });
 
     return () => {
       queueMicrotask(() => {
-        if (this.activeRegistration?.token !== token) return;
-        this.activeRegistration = undefined;
+        if (this.registrations.get(normalizedOwnerId)?.token !== token) return;
+        this.registrations.delete(normalizedOwnerId);
+        const wasActive = this.activeRegistration?.token === token;
+        if (!wasActive) return;
+        this.activeRegistration = [...this.registrations.values()].at(-1);
         this.rejectPendingLaunches('AI 问答来源已关闭。');
         this.launchId += 1;
         this.update({
           panelOpen: this.snapshot.panelOpen,
           busy: this.snapshot.busy,
+          ...(this.activeRegistration
+            ? { active: this.activeRegistration.source }
+            : {}),
           ...(this.snapshot.modeId ? { modeId: this.snapshot.modeId } : {}),
           ...(this.snapshot.boundAssetId
             ? { boundAssetId: this.snapshot.boundAssetId }
@@ -171,7 +181,9 @@ export class WorkbenchConversationRuntime {
     pending?: PendingLaunch,
   ): void {
     const ownerId = input.ownerId?.trim();
-    const registration = this.activeRegistration;
+    const registration = ownerId
+      ? this.registrations.get(ownerId)
+      : this.activeRegistration;
     if (ownerId && registration?.ownerId !== ownerId) {
       throw new Error('当前 Workbench 没有注册 AI 问答上下文');
     }
@@ -264,8 +276,13 @@ export class WorkbenchConversationRuntime {
   resolveContribution(
     source: ConversationMessageContextSource | undefined,
   ): WorkbenchConversationContribution | undefined {
-    const active = this.activeRegistration?.source;
-    return matchesSource(active, source) ? active.contribution : undefined;
+    if (!source) return undefined;
+    for (const registration of this.registrations.values()) {
+      if (matchesSource(registration.source, source)) {
+        return registration.source.contribution;
+      }
+    }
+    return undefined;
   }
 
   async revealContext(
@@ -310,6 +327,7 @@ export class WorkbenchConversationRuntime {
     this.rejectPendingLaunches('AI 问答面板已关闭。');
     this.cancelReveal();
     this.activeRegistration = undefined;
+    this.registrations.clear();
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }

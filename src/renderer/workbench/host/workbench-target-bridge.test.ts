@@ -78,6 +78,35 @@ describe('workbench Target bridge', () => {
     expect(replacement).toHaveBeenCalledOnce();
   });
 
+  it('keeps two viewport controllers for the same Asset isolated', async () => {
+    const materialReveal = vi.fn(() => true);
+    const notebookReveal = vi.fn(() => true);
+    registerWorkbenchTargetController('material-viewport', 'asset', {
+      sourceRevision: 'material-revision',
+      reveal: materialReveal,
+    });
+    registerWorkbenchTargetController('notebook-viewport', 'asset', {
+      sourceRevision: 'notebook-revision',
+      reveal: notebookReveal,
+    });
+
+    expect(
+      getWorkbenchTargetSourceRevision('asset', 'material-viewport'),
+    ).toBe('material-revision');
+    expect(
+      getWorkbenchTargetSourceRevision('asset', 'notebook-viewport'),
+    ).toBe('notebook-revision');
+    await revealWorkbenchTarget(
+      'asset',
+      target,
+      'material-revision',
+      false,
+      'material-viewport',
+    );
+    expect(materialReveal).toHaveBeenCalledWith(target);
+    expect(notebookReveal).not.toHaveBeenCalled();
+  });
+
   it('waits for a cross-Asset Workbench controller and supports cancellation', async () => {
     const waiting = waitForWorkbenchTargetController(
       'target',

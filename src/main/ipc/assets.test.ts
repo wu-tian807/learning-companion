@@ -100,6 +100,7 @@ function createDependencies() {
         return created;
       },
     ),
+    createMarkdownNote: vi.fn(async () => asset),
     update: vi.fn(() => asset),
     relinkLocalFile: vi.fn(async () => asset),
     delete: vi.fn(),
@@ -329,6 +330,28 @@ describe('Asset IPC handlers', () => {
     expect(assetService.refresh).toHaveBeenCalledWith('asset');
     expect(assetService.refreshAll).toHaveBeenCalledOnce();
     expect(assetService.revealInFolder).toHaveBeenCalledWith('asset');
+  });
+
+  it('creates an ordinary managed Markdown Asset only for the active Project', async () => {
+    const { assetService } = createDependencies();
+    registerAssetHandlers(assetService);
+
+    await expect(
+      findHandler(IPC_CHANNELS.createMarkdownNote)(
+        {},
+        { projectId: 'project', name: '新建笔记' },
+      ),
+    ).resolves.toMatchObject({ id: 'asset', mediaType: 'text/markdown' });
+    expect(assetService.createMarkdownNote).toHaveBeenCalledWith(
+      'project',
+      '新建笔记',
+    );
+    await expect(
+      findHandler(IPC_CHANNELS.createMarkdownNote)(
+        {},
+        { projectId: 'other' },
+      ),
+    ).rejects.toMatchObject({ code: 'PROJECT_CONTEXT_CHANGED' });
   });
 
   it('returns partial success details from a batch deletion', async () => {

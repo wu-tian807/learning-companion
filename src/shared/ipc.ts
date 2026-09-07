@@ -116,6 +116,7 @@ export const IPC_CHANNELS = {
   selectLocalAssetFiles: "asset:select-local-files",
   addLocalAssets: "asset:add-local-files",
   renameAsset: "asset:rename",
+  createMarkdownNote: "asset:create-markdown-note",
   relinkAsset: "asset:relink",
   deleteAssets: "asset:delete-many",
   refreshAsset: "asset:refresh",
@@ -255,6 +256,9 @@ export interface LearningCompanionApi {
     request: AddLocalAssetsRequest,
   ) => Promise<AddLocalAssetsResult>;
   renameAsset: (request: RenameAssetRequest) => Promise<AssetSnapshot>;
+  createMarkdownNote: (
+    request: CreateMarkdownNoteRequest,
+  ) => Promise<AssetSnapshot>;
   relinkAsset: (request: RelinkAssetRequest) => Promise<AssetSnapshot>;
   deleteAssets: (
     request: DeleteAssetsRequest,
@@ -425,6 +429,12 @@ export interface AddLocalAssetsResult {
 export interface RenameAssetRequest {
   assetId: string;
   name: string;
+}
+
+export interface CreateMarkdownNoteRequest {
+  projectId: string;
+  /** Display name only; managed storage uses an opaque collision-safe file name. */
+  name?: string;
 }
 
 export interface RelinkAssetRequest {
@@ -720,6 +730,16 @@ export function isRenameAssetRequest(
     isRecord(value) &&
     isRequiredText(value.assetId) &&
     isRequiredText(value.name, ASSET_NAME_MAX_LENGTH)
+  );
+}
+
+export function isCreateMarkdownNoteRequest(
+  value: unknown,
+): value is CreateMarkdownNoteRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.projectId) &&
+    (value.name === undefined || isRequiredText(value.name, ASSET_NAME_MAX_LENGTH))
   );
 }
 
