@@ -71,6 +71,8 @@ export type MarkdownRecoveryState = {
 export type MarkdownWorkbenchStateV1 = MarkdownWorkbenchViewState & {
   readonly recovery?: MarkdownRecoveryState;
   readonly conflictRecoveries?: readonly MarkdownConflictRecoveryState[];
+  /** Recovery entries still holding a session-level edit conflict. */
+  readonly activeConflictIds?: readonly string[];
 };
 export type MarkdownConflictRecoveryState = Omit<
   MarkdownRecoveryState,
@@ -139,6 +141,8 @@ export type MarkdownWorkbenchPayload = {
   readonly state: MarkdownWorkbenchViewState;
   readonly recovery?: MarkdownRecoveryBootstrap;
   readonly conflictRecovery?: MarkdownConflictRecoveryBootstrap;
+  /** Historical conflict backups are available for an explicit restore. */
+  readonly conflictBackupsAvailable?: boolean;
 };
 
 export type MarkdownSourceBufferPayload = {
@@ -573,6 +577,7 @@ export function isMarkdownWorkbenchStateV1(
   const record = value as Record<string, unknown>;
   const recovery = record.recovery;
   const conflicts = record.conflictRecoveries;
+  const activeConflictIds = record.activeConflictIds;
   return (
     (recovery === undefined || isMarkdownRecoveryState(recovery)) &&
     (conflicts === undefined ||
@@ -589,7 +594,17 @@ export function isMarkdownWorkbenchStateV1(
           isMarkdownEditMode(item.editedFrom) &&
           isNonNegativeInteger(item.updatedTime) &&
           isNonNegativeInteger(item.sharedDocumentVersion),
-        )))
+        ))) &&
+    (activeConflictIds === undefined ||
+      (Array.isArray(activeConflictIds) &&
+        conflicts !== undefined &&
+        activeConflictIds.every((id) =>
+          isMarkdownConflictId(id) &&
+          conflicts.some(
+            (conflict) => isRecord(conflict) && conflict.conflictId === id,
+          ),
+        ) &&
+        new Set(activeConflictIds).size === activeConflictIds.length))
   );
 }
 
@@ -613,6 +628,8 @@ export function isMarkdownWorkbenchPayload(
     isRequiredText(value.revision) &&
     (value.documentVersion === undefined ||
       isNonNegativeInteger(value.documentVersion)) &&
+    (value.conflictBackupsAvailable === undefined ||
+      typeof value.conflictBackupsAvailable === 'boolean') &&
     isMarkdownWorkbenchViewState(value.state) &&
     (recovery === undefined ||
       (isRecord(recovery) &&

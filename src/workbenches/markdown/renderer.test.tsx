@@ -123,4 +123,14 @@ describe('MarkdownWorkbenchView', () => {
     expect(markup).not.toContain('# 私有内容');
     expect(markup).not.toContain('Markdown 可视化编辑器');
   });
+
+  it('exposes retained conflict backups without locking ordinary editing', () => {
+    const markup = render({
+      ...basePayload,
+      conflictBackupsAvailable: true,
+    });
+
+    expect(markup).toContain('恢复冲突草稿');
+    expect(markup).not.toContain('普通保存已锁定');
+  });
 });

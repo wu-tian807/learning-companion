@@ -99,6 +99,7 @@ interface MarkdownDocumentRuntime {
   lastWriterUpdateId: number;
   readonly sessionIds: Set<string>;
   conflictRecoveries: MarkdownConflictRecoveryState[];
+  readonly activeConflictIds: Set<string>;
   writeTask: Promise<void>;
 }
 
@@ -153,6 +154,9 @@ function toJsonState(state: MarkdownWorkbenchStateV1): JsonValue {
       : {}),
     ...(state.conflictRecoveries
       ? { conflictRecoveries: state.conflictRecoveries }
+      : {}),
+    ...(state.activeConflictIds
+      ? { activeConflictIds: [...state.activeConflictIds] }
       : {}),
   };
 }
@@ -236,7 +240,9 @@ export class MarkdownWorkbenchProvider
       conflictIds: new Set(),
     });
     document.sessionIds.add(context.sessionId);
-    const conflict = document.conflictRecoveries.at(-1);
+    const conflict = [...document.conflictRecoveries]
+      .reverse()
+      .find((item) => document.activeConflictIds.has(item.conflictId));
     const conflictData = conflict
       ? await this.dataDatabase.get(
           context.asset.id,
@@ -269,6 +275,9 @@ export class MarkdownWorkbenchProvider
         hasByteOrderMark: document.source.hasByteOrderMark,
         revision: document.source.revision,
         documentVersion: document.documentVersion,
+        ...(document.conflictRecoveries.length > 0
+          ? { conflictBackupsAvailable: true }
+          : {}),
         state: viewState,
         ...(document.recovery && recoveryContent !== undefined
           ? {
@@ -365,7 +374,7 @@ export class MarkdownWorkbenchProvider
       case markdownCommands.resolveConflict: {
         if (!isMarkdownResolveConflictPayload(command.payload)) throw new AppError('INVALID_IPC_REQUEST');
         const payload = command.payload;
-        if (!runtime.conflictIds.has(payload.conflictId) ||
+        if (!this.canResolveConflict(runtime, payload.conflictId) ||
           !document.conflictRecoveries.some((item) => item.conflictId === payload.conflictId)) {
           throw new AppError('INVALID_IPC_REQUEST');
         }
@@ -382,7 +391,7 @@ export class MarkdownWorkbenchProvider
         document.documentVersion += 1;
         document.lastWriterSessionId = undefined;
         document.lastWriterUpdateId = 0;
-        runtime.conflictIds.clear();
+        this.releaseConflictState(runtime, payload.conflictId);
         this.publishDocumentChange(document);
         await this.scheduleRecovery(document, runtime.viewState);
         return this.createConflictStateResult(await this.readConflictState(document));
@@ -392,11 +401,12 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
         const payload = command.payload;
-        if (!runtime.conflictIds.has(payload.conflictId) ||
+        if (!this.canResolveConflict(runtime, payload.conflictId) ||
           !document.conflictRecoveries.some((item) => item.conflictId === payload.conflictId)) {
           throw new AppError('INVALID_IPC_REQUEST');
         }
-        runtime.conflictIds.clear();
+        this.releaseConflictState(runtime, payload.conflictId);
+        await this.saveCurrentState(runtime);
         return this.createConflictStateResult(await this.readConflictState(document));
       }
       case markdownCommands.backup: {
@@ -500,7 +510,7 @@ export class MarkdownWorkbenchProvider
         document.recovery = undefined;
         document.documentVersion += 1;
         this.publishDocumentChange(document, context.sessionId);
-        await this.clearRecovery(runtime.assetId, runtime.viewState, document.conflictRecoveries);
+        await this.clearRecovery(runtime.assetId, runtime.viewState, document.conflictRecoveries, [...document.activeConflictIds]);
         return createResult({ discarded: true });
       }
       case markdownCommands.insertImage: {
@@ -572,6 +582,34 @@ export class MarkdownWorkbenchProvider
     return runtime;
   }
 
+  private canResolveConflict(
+    runtime: MarkdownSessionRuntime,
+    conflictId: string,
+  ): boolean {
+    if (runtime.conflictIds.has(conflictId)) return true;
+    // Historical backups survive a restart but are not active session locks.
+    // They can be explicitly resolved/adopted by the newly opened viewport.
+    // A live owner always wins, so an unrelated viewport cannot release it.
+    for (const sessionId of runtime.document.sessionIds) {
+      if (sessionId === runtime.sessionId) continue;
+      if (this.sessions.get(sessionId)?.conflictIds.has(conflictId)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private releaseConflictState(
+    runtime: MarkdownSessionRuntime,
+    explicitConflictId: string,
+  ): void {
+    runtime.document.activeConflictIds.delete(explicitConflictId);
+    for (const conflictId of runtime.conflictIds) {
+      runtime.document.activeConflictIds.delete(conflictId);
+    }
+    runtime.conflictIds.clear();
+  }
+
   private async openDocument(
     assetId: string,
     handle: MarkdownSessionRuntime['handle'],
@@ -631,6 +669,7 @@ export class MarkdownWorkbenchProvider
       lastWriterUpdateId: 0,
       sessionIds: new Set(),
       conflictRecoveries: [...(state.conflictRecoveries ?? [])],
+      activeConflictIds: new Set(state.activeConflictIds ?? []),
       writeTask: Promise.resolve(),
     };
     this.documents.set(assetId, document);
@@ -756,11 +795,15 @@ export class MarkdownWorkbenchProvider
       dataKey, data: new TextEncoder().encode(content), updatedTime,
     });
     document.conflictRecoveries = [...document.conflictRecoveries, recovery];
+    document.activeConflictIds.add(conflictId);
     runtime.conflictIds.add(conflictId);
     await this.saveState(document.assetId, {
       ...runtime.viewState,
       ...(document.recovery ? { recovery: document.recovery } : {}),
       conflictRecoveries: document.conflictRecoveries,
+      ...(document.activeConflictIds.size > 0
+        ? { activeConflictIds: [...document.activeConflictIds] }
+        : {}),
     });
   }
 
@@ -1029,6 +1072,9 @@ export class MarkdownWorkbenchProvider
       ...(record.payload.conflictRecoveries
         ? { conflictRecoveries: record.payload.conflictRecoveries }
         : {}),
+      ...(record.payload.activeConflictIds
+        ? { activeConflictIds: record.payload.activeConflictIds }
+        : {}),
     };
   }
 
@@ -1067,7 +1113,7 @@ export class MarkdownWorkbenchProvider
     if (!this.isDirty(document)) {
       if (document.recovery) {
         document.recovery = undefined;
-        await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries);
+        await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries, [...document.activeConflictIds]);
       }
       return;
     }
@@ -1102,7 +1148,7 @@ export class MarkdownWorkbenchProvider
   ): Promise<number> {
     if (!this.isDirty(document)) {
       document.recovery = undefined;
-      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries);
+      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries, [...document.activeConflictIds]);
       return this.now();
     }
 
@@ -1131,6 +1177,9 @@ export class MarkdownWorkbenchProvider
       ...(document.conflictRecoveries.length > 0
         ? { conflictRecoveries: document.conflictRecoveries }
         : {}),
+      ...(document.activeConflictIds.size > 0
+        ? { activeConflictIds: [...document.activeConflictIds] }
+        : {}),
     });
     return updatedTime;
   }
@@ -1158,7 +1207,7 @@ export class MarkdownWorkbenchProvider
   ): Promise<WriteTextContentResult> {
     if (!this.isDirty(document)) {
       document.recovery = undefined;
-      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries);
+      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries, [...document.activeConflictIds]);
       return { revision: document.source.revision };
     }
 
@@ -1192,7 +1241,7 @@ export class MarkdownWorkbenchProvider
       await this.scheduleRecovery(document, viewState);
     } else {
       document.recovery = undefined;
-      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries);
+      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries, [...document.activeConflictIds]);
     }
     // A newer shared edit can arrive during the write.  Never collapse it
     // into the submitted source snapshot; it remains dirty and recoverable.
@@ -1212,11 +1261,15 @@ export class MarkdownWorkbenchProvider
       assetId,
       nextState,
       state.conflictRecoveries ?? [],
+      state.activeConflictIds ?? [],
     );
     return {
       ...nextState,
       ...(state.conflictRecoveries
         ? { conflictRecoveries: state.conflictRecoveries }
+        : {}),
+      ...(state.activeConflictIds
+        ? { activeConflictIds: state.activeConflictIds }
         : {}),
     };
   }
@@ -1225,6 +1278,7 @@ export class MarkdownWorkbenchProvider
     assetId: string,
     viewState: MarkdownWorkbenchViewState,
     conflictRecoveries: readonly MarkdownConflictRecoveryState[] = [],
+    activeConflictIds: readonly string[] = [],
   ): Promise<void> {
     await this.dataDatabase.delete(
       assetId,
@@ -1234,6 +1288,7 @@ export class MarkdownWorkbenchProvider
     await this.saveState(assetId, {
       ...viewState,
       ...(conflictRecoveries.length > 0 ? { conflictRecoveries } : {}),
+      ...(activeConflictIds.length > 0 ? { activeConflictIds } : {}),
     });
   }
 
@@ -1247,6 +1302,9 @@ export class MarkdownWorkbenchProvider
         : {}),
       ...(runtime.document.conflictRecoveries.length > 0
         ? { conflictRecoveries: runtime.document.conflictRecoveries }
+        : {}),
+      ...(runtime.document.activeConflictIds.size > 0
+        ? { activeConflictIds: [...runtime.document.activeConflictIds] }
         : {}),
     });
   }

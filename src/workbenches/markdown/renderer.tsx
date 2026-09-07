@@ -66,7 +66,10 @@ import {
   isMarkdownInsertImageResult,
   isMarkdownLineEndingResult,
   isMarkdownReadImageResult,
+  isMarkdownReadConflictStateResult,
   isMarkdownReopenResult,
+  isMarkdownResolveConflictResult,
+  isMarkdownAdoptSharedResult,
   isMarkdownSaveResult,
   isMarkdownSaveViewStateResult,
   isMarkdownWorkbenchPayload,
@@ -86,6 +89,8 @@ import {
   type MarkdownEditMode,
   type MarkdownEncoding,
   type MarkdownLineEnding,
+  type MarkdownReadConflictStateResult,
+  type MarkdownConflictBackupResult,
   type MarkdownSourceViewState,
   type MarkdownWorkbenchViewState,
 } from './shared';
@@ -288,6 +293,20 @@ function MarkdownRecoveryDialog({
   );
 }
 
+type MarkdownConflictUiState = {
+  /** An owned Main recovery entry used for resolve/adopt. */
+  readonly conflictId?: string;
+  readonly sharedContent: string;
+  readonly expectedDocumentVersion: number;
+  readonly backups: readonly MarkdownConflictBackupResult[];
+  readonly selectedBackupId?: string;
+  /** A peer advanced after the user compared the shown shared content. */
+  readonly newerShared?: {
+    readonly content: string;
+    readonly documentVersion: number;
+  };
+};
+
 export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const {
@@ -370,8 +389,71 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const [wysiwygEditorKey, setWysiwygEditorKey] = useState(0);
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
   const [syncConflict, setSyncConflict] = useState<string | undefined>();
+  /**
+   * This is intentionally separate from documentVersionRef. The latter tracks
+   * ordinary document events; a conflict CAS is against the shared snapshot
+   * the user actually compared while editing the merge draft.
+   */
+  const conflictStateRef = useRef<MarkdownConflictUiState | undefined>(undefined);
+  const [conflictState, setConflictState] = useState<
+    MarkdownConflictUiState | undefined
+  >();
   const dirty =
     workingBuffer !== diskSource || lineEnding !== savedLineEnding;
+
+  const updateConflictState = useCallback(
+    (next: MarkdownConflictUiState | undefined) => {
+      conflictStateRef.current = next;
+      setConflictState(next);
+    },
+    [],
+  );
+
+  const readConflictState = useCallback(async () => {
+    const result = await executeCommand({
+      type: markdownCommands.readConflictState,
+    });
+    if (!isMarkdownReadConflictStateResult(result.payload)) {
+      throw new Error('Markdown Workbench 冲突状态响应无效');
+    }
+    return result.payload as MarkdownReadConflictStateResult;
+  }, [executeCommand]);
+
+  const loadConflictState = useCallback(async (
+    message: string,
+    options?: {
+      readonly preferredConflictId?: string;
+      /** Keep the comparison immutable but disclose a newer shared version. */
+      readonly preserveComparison?: boolean;
+    },
+  ) => {
+    syncConflictRef.current = true;
+    setSyncConflict(message);
+    const result = await readConflictState();
+    const current = conflictStateRef.current;
+    const conflictId = options?.preferredConflictId ?? current?.conflictId ??
+      result.conflicts.find((item) => 'content' in item)?.conflictId ??
+      result.conflicts[0]?.conflictId;
+    if (options?.preserveComparison && current) {
+      updateConflictState({
+        ...current,
+        backups: result.conflicts,
+        newerShared: {
+          content: result.sharedContent,
+          documentVersion: result.documentVersion,
+        },
+      });
+      return result;
+    }
+    updateConflictState({
+      conflictId,
+      sharedContent: result.sharedContent,
+      expectedDocumentVersion: result.documentVersion,
+      backups: result.conflicts,
+      selectedBackupId: conflictId,
+    });
+    return result;
+  }, [readConflictState, updateConflictState]);
 
   useEffect(() => {
     if (!subscribeEvent) return;
@@ -382,13 +464,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         event.payload === null ||
         Array.isArray(event.payload)
       ) {
-        return;
-      }
-      if (pendingDocumentSyncsRef.current > 0) {
-        syncConflictRef.current = true;
-        setSyncConflict(
-          '另一视口已修改此 Markdown；当前草稿已保留，请先处理冲突后再保存。',
-        );
         return;
       }
       const change = event.payload as Readonly<Record<string, unknown>>;
@@ -405,6 +480,20 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       ) {
         return;
       }
+      if (pendingDocumentSyncsRef.current > 0) {
+        syncConflictRef.current = true;
+        setSyncConflict(
+          '另一视口已修改此 Markdown；当前草稿已保留，请先处理冲突后再保存。',
+        );
+        updateConflictState({
+          conflictId: conflictStateRef.current?.conflictId,
+          sharedContent: change.content,
+          expectedDocumentVersion: change.documentVersion,
+          backups: conflictStateRef.current?.backups ?? [],
+          selectedBackupId: conflictStateRef.current?.selectedBackupId,
+        });
+        return;
+      }
       // A rejected local version is a persistent conflict, not a transient
       // pending request. Keep the draft intact across every later peer event.
       if (syncConflictRef.current) {
@@ -412,6 +501,21 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           documentVersionRef.current,
           change.documentVersion,
         );
+        const currentConflict = conflictStateRef.current;
+        if (currentConflict) {
+          updateConflictState({
+            ...currentConflict,
+            newerShared: {
+              content: change.content,
+              documentVersion: change.documentVersion,
+            },
+          });
+        }
+        // Peer disk transitions are still useful as a dirty baseline. They
+        // must never replace the locally editable merge draft.
+        setDiskSource(change.diskSource);
+        setSavedLineEnding(change.savedLineEnding);
+        setSourceRevision(change.revision);
         return;
       }
       // Never remount an editor for a peer update: that loses undo/IME and
@@ -466,7 +570,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       setSavedLineEnding(change.savedLineEnding);
       setSourceRevision(change.revision);
     });
-  }, [subscribeEvent]);
+  }, [subscribeEvent, updateConflictState]);
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -479,6 +583,22 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     },
     [onError],
   );
+
+  useEffect(() => {
+    const conflict = payload?.conflictRecovery;
+    if (!conflict) return;
+    void loadConflictState(
+      '发现一份未解决的 Markdown 冲突草稿。请选择恢复后手动合并，或采用共享版本。',
+      { preferredConflictId: conflict.conflictId },
+    ).catch((error) => {
+      reportError(error, '无法读取 Markdown 冲突草稿。');
+    });
+  }, [
+    bootstrap.sessionId,
+    loadConflictState,
+    payload?.conflictRecovery?.conflictId,
+    reportError,
+  ]);
 
   const sourceExtensions = useMemo(() => {
     const extensions = [markdown(), markdownSourceTheme];
@@ -659,14 +779,15 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         }
         return accepted;
       } catch (error) {
-        syncConflictRef.current = true;
-        setSyncConflict('本地草稿与另一视口冲突，草稿已保留。请保存或手动处理后继续。');
+        await loadConflictState(
+          '本地草稿与另一视口冲突，草稿已保留。请手动合并后应用合并结果，或采用共享版本。',
+        );
         throw error;
       } finally {
         pendingDocumentSyncsRef.current -= 1;
       }
     },
-    [acceptSyncResult, executeCommand],
+    [acceptSyncResult, executeCommand, loadConflictState],
   );
 
   const syncWysiwygBuffer = useCallback(
@@ -691,15 +812,146 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         }
         return accepted;
       } catch (error) {
-        syncConflictRef.current = true;
-        setSyncConflict('本地草稿与另一视口冲突，草稿已保留。请保存或手动处理后继续。');
+        await loadConflictState(
+          '本地草稿与另一视口冲突，草稿已保留。请手动合并后应用合并结果，或采用共享版本。',
+        );
         throw error;
       } finally {
         pendingDocumentSyncsRef.current -= 1;
       }
     },
-    [acceptSyncResult, executeCommand],
+    [acceptSyncResult, executeCommand, loadConflictState],
   );
+
+  const replaceConflictDraft = useCallback((content: string) => {
+    const editor = sourceEditorRef.current?.view;
+    if (editor?.composing) {
+      throw new Error('请先完成当前输入法组合，再恢复冲突草稿。');
+    }
+    workingBufferRef.current = content;
+    sourceInitialValueRef.current = content;
+    setWorkingBuffer(content);
+    if (viewStateRef.current.viewMode === 'source' && editor) {
+      applyingRemoteSourceRef.current = true;
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: content },
+        annotations: Transaction.addToHistory.of(false),
+      });
+      queueMicrotask(() => {
+        applyingRemoteSourceRef.current = false;
+      });
+      return;
+    }
+    // Recovery is intentionally edited in Source mode. This makes both the
+    // local draft and the read-only shared snapshot visible, while normal
+    // WYSIWYG editing remains available outside conflict handling.
+    applyViewState({
+      ...viewStateRef.current,
+      viewMode: 'source',
+    });
+  }, [applyViewState]);
+
+  const refreshConflictComparison = useCallback(async () => {
+    try {
+      await loadConflictState(
+        '共享版本已刷新。请确认合并内容后再应用。',
+        { preferredConflictId: conflictStateRef.current?.conflictId },
+      );
+    } catch (error) {
+      reportError(error, '无法刷新 Markdown 共享版本。');
+    }
+  }, [loadConflictState, reportError]);
+
+  const restoreConflictBackup = useCallback((conflictId: string) => {
+    const conflict = conflictStateRef.current;
+    const backup = conflict?.backups.find(
+      (item) => item.conflictId === conflictId,
+    );
+    if (!conflict || !backup || !('content' in backup)) {
+      reportError(
+        new Error('该冲突备份已不可读取，无法恢复。'),
+        '无法恢复 Markdown 冲突草稿。',
+      );
+      return;
+    }
+    try {
+      replaceConflictDraft(backup.content);
+      updateConflictState({
+        ...conflict,
+        selectedBackupId: conflictId,
+      });
+    } catch (error) {
+      reportError(error, '无法恢复 Markdown 冲突草稿。');
+    }
+  }, [replaceConflictDraft, reportError, updateConflictState]);
+
+  const applyConflictMerge = useCallback(async () => {
+    const conflict = conflictStateRef.current;
+    if (!conflict?.conflictId) {
+      reportError(new Error('缺少可解决的冲突草稿。'), '无法应用 Markdown 合并结果。');
+      return;
+    }
+    if (conflict.newerShared) {
+      setSyncConflict('共享版本在对照后已更新；请先刷新共享对照并重新确认合并结果。');
+      return;
+    }
+    try {
+      const result = await executeCommand({
+        type: markdownCommands.resolveConflict,
+        payload: {
+          conflictId: conflict.conflictId,
+          expectedDocumentVersion: conflict.expectedDocumentVersion,
+          content: workingBufferRef.current,
+        },
+      });
+      if (!isMarkdownResolveConflictResult(result.payload)) {
+        throw new Error('Markdown Workbench 合并响应无效');
+      }
+      documentVersionRef.current = result.payload.documentVersion;
+      syncConflictRef.current = false;
+      setSyncConflict(undefined);
+      updateConflictState(undefined);
+    } catch (error) {
+      // Main persisted this newest merge candidate before rejecting stale CAS.
+      // Refresh only the disclosed latest snapshot; never replace the draft.
+      try {
+        await loadConflictState(
+          '共享版本在应用期间又发生变化；最新合并稿已备份，请刷新对照后重新确认。',
+          {
+            preferredConflictId: conflict.conflictId,
+            preserveComparison: true,
+          },
+        );
+      } catch (readError) {
+        reportError(readError, '无法读取 Markdown 最新冲突状态。');
+      }
+      reportError(error, '无法应用 Markdown 合并结果。');
+    }
+  }, [executeCommand, loadConflictState, reportError, updateConflictState]);
+
+  const adoptSharedConflict = useCallback(async () => {
+    const conflict = conflictStateRef.current;
+    if (!conflict?.conflictId) {
+      reportError(new Error('缺少可采用的共享版本。'), '无法采用 Markdown 共享版本。');
+      return;
+    }
+    try {
+      const result = await executeCommand({
+        type: markdownCommands.adoptShared,
+        payload: { conflictId: conflict.conflictId },
+      });
+      if (!isMarkdownAdoptSharedResult(result.payload)) {
+        throw new Error('Markdown Workbench 采用共享版本响应无效');
+      }
+      replaceConflictDraft(result.payload.sharedContent);
+      documentVersionRef.current = result.payload.documentVersion;
+      syncConflictRef.current = false;
+      setSyncConflict(undefined);
+      updateConflictState(undefined);
+    } catch (error) {
+      reportError(error, '无法采用 Markdown 共享版本。');
+    }
+  }, [executeCommand, replaceConflictDraft, reportError, updateConflictState]);
 
   const readMarkdownImageDataUrl = useCallback(
     async (relativePath: string): Promise<string | undefined> => {
@@ -1096,7 +1348,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   }, [dirty, syncSourceBuffer, syncWysiwygBuffer]);
 
   const save = useCallback(async () => {
-    if (!dirty || saving || recovery) {
+    if (!dirty || saving || recovery || syncConflictRef.current) {
       return;
     }
 
@@ -1128,6 +1380,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     executeCommand,
     flushCurrentBuffer,
     recovery,
+    syncConflict,
     reportError,
     saving,
   ]);
@@ -1602,7 +1855,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       `${conversationOwnerId}.targets`,
       asset.id,
       {
-        sourceRevision,
+        // A dirty editor no longer materializes the revision on disk. Do not
+        // let direct-reference navigation claim it can reveal that stale file
+        // revision against the unsaved local document.
+        ...(dirty ? {} : { sourceRevision }),
         resolve(target) {
           return resolveMarkdownTargetRect(target);
         },
@@ -1683,6 +1939,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     revealMarkdownSelection,
     revealMarkdownText,
     sourceRevision,
+    dirty,
   ]);
 
   const rendererActions = useMemo(
@@ -1776,6 +2033,20 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             ))}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {payload.conflictBackupsAvailable && !syncConflict ? (
+            <button
+              type="button"
+              disabled={Boolean(recovery) || saving}
+              onClick={() =>
+                void loadConflictState(
+                  '已打开保留的冲突草稿。请选择草稿后在源码模式手动合并。',
+                )
+              }
+              className="ui-control h-[28px] rounded-lg border border-amber-200/20 px-3 text-[10px] font-medium text-amber-100 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              恢复冲突草稿
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={Boolean(recovery) || saving}
@@ -1787,7 +2058,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           </button>
           <button
             type="button"
-            disabled={!dirty || saving || Boolean(recovery)}
+            disabled={!dirty || saving || Boolean(recovery) || Boolean(syncConflict)}
             onClick={() => void save()}
             className="ui-control h-[28px] rounded-lg border border-white/[0.09] px-3 text-[10px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
             title="保存 Markdown（⌘/Ctrl + S）"
@@ -1798,8 +2069,66 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       </div>
 
       {syncConflict ? (
-        <div role="alert" className="border-b border-amber-300/20 bg-amber-100/10 px-3 py-1 text-xs text-amber-100">
+        <div role="alert" className="border-b border-amber-300/20 bg-amber-100/10 px-3 py-2 text-xs text-amber-100">
           {syncConflict}
+          <p className="mt-1">普通保存已锁定；请在源码模式手动合并后应用合并结果，或采用共享版本。</p>
+          {conflictState ? (
+            <div className="mt-2 grid gap-2 rounded border border-amber-200/20 bg-black/10 p-2 text-[11px] text-amber-50">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>共享对照版本 v{conflictState.expectedDocumentVersion}</span>
+                {conflictState.newerShared ? (
+                  <span className="text-amber-200">
+                    已发现较新的共享版本 v{conflictState.newerShared.documentVersion}，请刷新后重新确认。
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void refreshConflictComparison()}
+                  className="ui-control rounded border border-amber-100/20 px-2 py-1 text-amber-50"
+                >
+                  刷新共享对照
+                </button>
+              </div>
+              <pre aria-label="冲突共享版本" className="max-h-28 overflow-auto whitespace-pre-wrap rounded bg-black/20 p-2 font-mono text-[10px] text-slate-200">
+                {conflictState.sharedContent}
+              </pre>
+              <div className="flex flex-wrap items-center gap-2">
+                <label>
+                  冲突草稿
+                  <select
+                    aria-label="冲突草稿备份"
+                    className="ml-1 rounded bg-slate-900 px-1 py-0.5 text-slate-100"
+                    value={conflictState.selectedBackupId ?? ''}
+                    onChange={(event) => restoreConflictBackup(event.currentTarget.value)}
+                  >
+                    {conflictState.backups.map((backup) => (
+                      <option key={backup.conflictId} value={backup.conflictId} disabled={'unavailable' in backup}>
+                        {'content' in backup
+                          ? `可恢复草稿 ${backup.conflictId.slice(0, 8)}`
+                          : `不可读取草稿 ${backup.conflictId.slice(0, 8)}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={!conflictState.conflictId || Boolean(conflictState.newerShared)}
+                  onClick={() => void applyConflictMerge()}
+                  className="ui-primary-button rounded bg-amber-100 px-2 py-1 font-medium text-slate-900 disabled:opacity-45"
+                >
+                  应用合并结果
+                </button>
+                <button
+                  type="button"
+                  disabled={!conflictState.conflictId}
+                  onClick={() => void adoptSharedConflict()}
+                  className="ui-control rounded border border-amber-100/20 px-2 py-1 text-amber-50 disabled:opacity-45"
+                >
+                  保留备份并采用共享版本
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
 
