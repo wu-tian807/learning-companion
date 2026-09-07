@@ -43,4 +43,21 @@ describe('WorkbenchLocationReference', () => {
       ),
     ).toBeUndefined();
   });
+
+  it('rejects an oversized opaque Target before emitting an unreadable href', () => {
+    expect(() =>
+      createWorkbenchLocationHref({
+        version: 2,
+        projectId: 'project',
+        assetId: 'asset',
+        sourceRevision: 'v1',
+        target: {
+          scope: 'content',
+          targetType: 'test.opaque',
+          targetVersion: 1,
+          targetPayload: { payload: 'x'.repeat(100_000) },
+        },
+      }),
+    ).toThrow('超过可保存的链接长度');
+  });
 });

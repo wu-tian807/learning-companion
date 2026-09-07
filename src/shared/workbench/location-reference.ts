@@ -66,9 +66,15 @@ function encode(value: string): string {
 export function createWorkbenchLocationHref(
   reference: WorkbenchLocationReference,
 ): string {
-  return WORKBENCH_LOCATION_REFERENCE_V2_PREFIX + encode(
+  const href = WORKBENCH_LOCATION_REFERENCE_V2_PREFIX + encode(
     JSON.stringify(cloneWorkbenchLocationReference(reference)),
   );
+  // The parser intentionally applies the same transport budget.  Do not emit
+  // a link that becomes unreadable as soon as it is inserted into Markdown.
+  if (href.length > MAX_HREF_LENGTH) {
+    throw new Error('Workbench 位置引用超过可保存的链接长度。');
+  }
+  return href;
 }
 
 export function parseWorkbenchLocationHref(

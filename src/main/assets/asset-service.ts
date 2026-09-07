@@ -554,28 +554,31 @@ export class AssetService implements AssetServiceApi {
       input.fileName,
       input.content,
     );
-    this.requireUnchangedProject(lifecycleVersion, projectId);
-    const existing = [...this.runtimeMap.values()].find((asset) =>
-      isSameContentRef(asset.contentRef, generated.contentRef),
-    );
-
-    if (existing) {
-      if (
-        existing.creationKind !== 'generated' ||
-        existing.mediaType !== input.mediaType
-      ) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-
-      return Object.freeze({
-        asset: cloneAssetSnapshot(existing),
-        created: false,
-      });
-    }
-
     let resolved: ResolvedAssetContent | undefined;
 
     try {
+      // This check must be protected by the cleanup path: createGeneratedFile
+      // may have already materialized a managed file when a Project switch
+      // supersedes the request.
+      this.requireUnchangedProject(lifecycleVersion, projectId);
+      const existing = [...this.runtimeMap.values()].find((asset) =>
+        isSameContentRef(asset.contentRef, generated.contentRef),
+      );
+
+      if (existing) {
+        if (
+          existing.creationKind !== 'generated' ||
+          existing.mediaType !== input.mediaType
+        ) {
+          throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+
+        return Object.freeze({
+          asset: cloneAssetSnapshot(existing),
+          created: false,
+        });
+      }
+
       resolved = await this.resolverRegistry.resolve(
         generated.contentRef,
         context,

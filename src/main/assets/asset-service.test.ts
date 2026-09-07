@@ -816,6 +816,74 @@ describe('AssetService', () => {
     );
   });
 
+  it('removes a newly materialized Markdown file when a Project switch supersedes creation', async () => {
+    const database = createDatabase([]);
+    const { registry } = createResolver();
+    const contentRef = createProjectWorkspaceContentRef(
+      '.learning-companion/assets/generated/note-switch.md',
+    );
+    let finishCreate!: () => void;
+    const createGeneratedFile = vi.fn(async () => {
+      await new Promise<void>((resolve) => {
+        finishCreate = resolve;
+      });
+      return {
+        contentRef,
+        absolutePath:
+          '/tmp/project/.learning-companion/assets/generated/note-switch.md',
+        created: true,
+      };
+    });
+    const removeManagedAssetFile = vi.fn(async () => true);
+    const service = createService(
+      database,
+      registry,
+      { detectMediaType: vi.fn(async () => 'text/markdown') },
+      { createGeneratedFile, removeManagedAssetFile },
+    );
+    await service.loadFromProject('project');
+
+    const creating = service.createMarkdownNote('project');
+    await vi.waitFor(() => expect(createGeneratedFile).toHaveBeenCalledOnce());
+    service.unloadProject();
+    finishCreate();
+
+    await expect(creating).rejects.toThrow('PROJECT_CONTEXT_CHANGED');
+    expect(removeManagedAssetFile).toHaveBeenCalledWith('/tmp/project', contentRef);
+  });
+
+  it('removes a newly materialized Markdown file when Asset persistence fails', async () => {
+    const database = createDatabase([]);
+    vi.mocked(database.add).mockImplementation(() => {
+      throw new Error('database write failed');
+    });
+    const { registry } = createResolver();
+    const contentRef = createProjectWorkspaceContentRef(
+      '.learning-companion/assets/generated/note-db-failure.md',
+    );
+    const removeManagedAssetFile = vi.fn(async () => true);
+    const service = createService(
+      database,
+      registry,
+      { detectMediaType: vi.fn(async () => 'text/markdown') },
+      {
+        createGeneratedFile: vi.fn(async () => ({
+          contentRef,
+          absolutePath:
+            '/tmp/project/.learning-companion/assets/generated/note-db-failure.md',
+          created: true,
+        })),
+        removeManagedAssetFile,
+      },
+    );
+    await service.loadFromProject('project');
+
+    await expect(service.createMarkdownNote('project')).rejects.toThrow(
+      'database write failed',
+    );
+    expect(removeManagedAssetFile).toHaveBeenCalledWith('/tmp/project', contentRef);
+  });
+
   it('removes the Workspace-owned copy when deleting an imported Asset', async () => {
     const copiedRef = createProjectWorkspaceContentRef(
       '.learning-companion/assets/imported/lecture.pdf',
