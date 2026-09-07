@@ -202,6 +202,76 @@ describe('MarkdownWorkbenchProvider', () => {
     ).toBe('# Source 修改\n');
   });
 
+  it('keeps input that arrives while a save is writing as a recoverable dirty buffer', async () => {
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
+    let diskContent = source.content;
+    let diskRevision = source.revision;
+    let releaseWrite!: () => void;
+    let reportWriteStarted!: () => void;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const writeStarted = new Promise<void>((resolve) => {
+      reportWriteStarted = resolve;
+    });
+    const writeBytes = vi.fn(async (request: WriteByteContentRequest) => {
+      expect(request.expectedRevision).toBe(diskRevision);
+      reportWriteStarted();
+      await writeGate;
+      diskContent = new TextDecoder().decode(request.content);
+      diskRevision = 'revision-1';
+      return { revision: diskRevision };
+    });
+    const handle: ContentHandle = {
+      capabilities: new Set(['read-bytes', 'write-bytes']),
+      readBytes: vi.fn(async () => ({
+        content: encodeTextContent({ ...source, content: diskContent }),
+        revision: diskRevision,
+      })),
+      writeBytes,
+      close: vi.fn(async () => undefined),
+    };
+    const provider = new MarkdownWorkbenchProvider(states, data);
+    const context = createContext('session', handle);
+    await provider.open(context);
+    await provider.command(
+      context,
+      createMarkdownSyncSourceCommand({
+        content: '# first edit\n',
+        lineEnding: 'lf',
+        sourceViewState,
+      }),
+    );
+
+    const saving = provider.command(context, { type: markdownCommands.save });
+    await writeStarted;
+    await provider.command(
+      context,
+      createMarkdownSyncSourceCommand({
+        content: '# second edit during save\n',
+        lineEnding: 'lf',
+        sourceViewState,
+      }),
+    );
+    releaseWrite();
+    await saving;
+    await provider.close(context);
+
+    expect(diskContent).toBe('# first edit\n');
+    expect(
+      new TextDecoder().decode(
+        (
+          await data.get(
+            'asset',
+            MARKDOWN_WORKBENCH_ID,
+            MARKDOWN_RECOVERY_DATA_KEY,
+          )
+        )?.data,
+      ),
+    ).toBe('# second edit during save\n');
+  });
+
   it('allows a WYSIWYG edit through the ordinary save command', async () => {
     const provider = new MarkdownWorkbenchProvider(
       new MemoryStateDatabase(),

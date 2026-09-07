@@ -755,21 +755,33 @@ export class MarkdownWorkbenchProvider
       return { revision: runtime.source.revision };
     }
 
+    // A write is asynchronous.  Freeze both the buffer and its source basis so
+    // a sync arriving while the handle is writing cannot be mistaken for disk
+    // content when the promise resolves.
+    const submittedContent = runtime.workingBuffer;
+    const submittedLineEnding = runtime.currentLineEnding;
+    const submittedSource = runtime.source;
     const result = await this.textContentAdapter.write(runtime.handle, {
-      content: runtime.workingBuffer,
-      encoding: runtime.source.encoding,
-      lineEnding: runtime.currentLineEnding,
-      hasByteOrderMark: runtime.source.hasByteOrderMark,
-      expectedRevision: runtime.source.revision,
+      content: submittedContent,
+      encoding: submittedSource.encoding,
+      lineEnding: submittedLineEnding,
+      hasByteOrderMark: submittedSource.hasByteOrderMark,
+      expectedRevision: submittedSource.revision,
     });
     runtime.source = {
-      ...runtime.source,
-      content: runtime.workingBuffer,
-      lineEnding: runtime.currentLineEnding,
+      ...submittedSource,
+      content: submittedContent,
+      lineEnding: submittedLineEnding,
       revision: result.revision,
     };
-    runtime.recovery = undefined;
-    await this.clearRecovery(runtime.assetId, runtime.viewState);
+    if (this.isDirty(runtime)) {
+      // New input landed during the write.  It remains dirty relative to the
+      // committed snapshot and must survive close/restart.
+      await this.scheduleRecovery(runtime);
+    } else {
+      runtime.recovery = undefined;
+      await this.clearRecovery(runtime.assetId, runtime.viewState);
+    }
     return result;
   }
 

@@ -14,8 +14,22 @@ export interface WorkbenchTargetController {
   /** Current materialized content revision, when the Asset target uses one. */
   readonly sourceRevision?: string;
   resolve?(target: AssetTarget): WorkbenchTargetRect | undefined;
-  reveal(target: AssetTarget): boolean | void | Promise<boolean | void>;
-  emphasize?(target: AssetTarget): void | Promise<void>;
+  /**
+   * A controller owns its native navigation state, but must observe this
+   * signal before committing an asynchronous scroll/selection change.
+   */
+  reveal(
+    target: AssetTarget,
+    options?: WorkbenchTargetOperationOptions,
+  ): boolean | void | Promise<boolean | void>;
+  emphasize?(
+    target: AssetTarget,
+    options?: WorkbenchTargetOperationOptions,
+  ): void | Promise<void>;
+}
+
+export interface WorkbenchTargetOperationOptions {
+  readonly signal?: AbortSignal;
 }
 
 interface Registration {
@@ -77,17 +91,40 @@ export function registerWorkbenchTargetController(
   };
 }
 
-function current(
+function currentRegistration(
   assetId: string,
   ownerId?: string,
-): WorkbenchTargetController | undefined {
+): Registration | undefined {
   const normalizedAssetId = assetId.trim();
   const normalizedOwnerId = ownerId?.trim();
   const registrations = registrationsByAsset.get(normalizedAssetId);
   const registration = normalizedOwnerId
     ? registrations?.get(normalizedOwnerId)
     : registrations?.get(latestOwnerByAsset.get(normalizedAssetId) ?? '');
-  return registration?.controller;
+  return registration;
+}
+
+function current(
+  assetId: string,
+  ownerId?: string,
+): WorkbenchTargetController | undefined {
+  return currentRegistration(assetId, ownerId)?.controller;
+}
+
+function throwIfCancelled(
+  signal: AbortSignal | undefined,
+  expectedRegistration: Registration,
+  assetId: string,
+  ownerId: string | undefined,
+): void {
+  if (signal?.aborted) {
+    throw signal.reason instanceof Error
+      ? signal.reason
+      : new DOMException('引用定位已取消。', 'AbortError');
+  }
+  if (currentRegistration(assetId, ownerId)?.token !== expectedRegistration.token) {
+    throw new DOMException('目标资料视口已关闭或被替换。', 'AbortError');
+  }
 }
 
 export function resolveWorkbenchTarget(
@@ -111,9 +148,14 @@ export async function revealWorkbenchTarget(
   sourceRevision?: string,
   emphasize = false,
   ownerId?: string,
+  signal?: AbortSignal,
 ): Promise<void> {
-  const controller = current(assetId, ownerId);
-  if (!controller) throw new Error('目标资料尚未准备好，无法定位原文。');
+  const registration = currentRegistration(assetId, ownerId);
+  const controller = registration?.controller;
+  if (!registration || !controller) {
+    throw new Error('目标资料尚未准备好，无法定位原文。');
+  }
+  throwIfCancelled(signal, registration, assetId, ownerId);
   // Selecting the Asset already reveals an asset-scoped Target. It has no
   // content position whose revision could become stale.
   if (target.scope === 'asset') return;
@@ -123,10 +165,18 @@ export async function revealWorkbenchTarget(
   ) {
     throw new Error('引用的资料内容已更新，无法再定位原位置。');
   }
-  if (await controller.reveal(target) === false) {
+  const revealResult = signal
+    ? await controller.reveal(target, { signal })
+    : await controller.reveal(target);
+  if (revealResult === false) {
     throw new Error('原文内容可能已经变化，无法定位该引用。');
   }
-  if (emphasize) await controller.emphasize?.(target);
+  throwIfCancelled(signal, registration, assetId, ownerId);
+  if (emphasize) {
+    if (signal) await controller.emphasize?.(target, { signal });
+    else await controller.emphasize?.(target);
+    throwIfCancelled(signal, registration, assetId, ownerId);
+  }
 }
 
 export function waitForWorkbenchTargetController(
@@ -192,7 +242,14 @@ export async function selectAndRevealWorkbenchTarget({
   if (target.scope === 'asset') return;
   await waitForWorkbenchTargetController(assetId, signal, timeoutMs, ownerId);
   if (signal.aborted) throw signal.reason;
-  await revealWorkbenchTarget(assetId, target, sourceRevision, emphasize, ownerId);
+  await revealWorkbenchTarget(
+    assetId,
+    target,
+    sourceRevision,
+    emphasize,
+    ownerId,
+    signal,
+  );
 }
 
 export function resetWorkbenchTargetControllerForTests(): void {

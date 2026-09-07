@@ -58,6 +58,13 @@ export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
   private readonly pendingLaunches = new Map<number, PendingLaunch>();
   private readonly consumedLaunchOwners = new Map<number, string | undefined>();
+  /**
+   * The panel may already have consumed a launch while another viewport became
+   * the visual active registration. Keep that transient context's owner
+   * separately: neither `activeRegistration` nor `launchRequest` is its
+   * authority after consumption.
+   */
+  private transientContextRequestId: number | undefined;
   private activeRegistration: ActiveRegistration | undefined;
   /** All mounted Workbench sources, keyed by their visual owner. */
   private readonly registrations = new Map<string, ActiveRegistration>();
@@ -110,28 +117,38 @@ export class WorkbenchConversationRuntime {
         if (this.registrations.get(normalizedOwnerId)?.token !== token) return;
         this.registrations.delete(normalizedOwnerId);
         const wasActive = this.activeRegistration?.token === token;
-        if (!wasActive) return;
-        this.activeRegistration = [...this.registrations.values()].at(-1);
-        const ownsLaunch =
+        const ownsPendingLaunch =
           this.snapshot.launchRequest?.sourceOwnerId === normalizedOwnerId;
-        if (ownsLaunch) {
+        const ownsConsumedContext =
+          this.transientContextRequestId !== undefined &&
+          this.consumedLaunchOwners.get(this.transientContextRequestId) ===
+            normalizedOwnerId;
+        if (!wasActive && !ownsPendingLaunch && !ownsConsumedContext) return;
+
+        if (wasActive) {
+          this.activeRegistration = [...this.registrations.values()].at(-1);
+        }
+        if (ownsPendingLaunch) {
           this.rejectPendingLaunches(
             'AI 问答来源已关闭。',
             normalizedOwnerId,
           );
-          this.launchId += 1;
         }
+        if (ownsConsumedContext) {
+          this.consumedLaunchOwners.delete(this.transientContextRequestId!);
+          this.transientContextRequestId = undefined;
+        }
+        if (ownsPendingLaunch || ownsConsumedContext) this.launchId += 1;
+
         this.update({
-          panelOpen: this.snapshot.panelOpen,
-          busy: this.snapshot.busy,
+          ...this.snapshot,
           ...(this.activeRegistration
             ? { active: this.activeRegistration.source }
-            : {}),
-          ...(this.snapshot.modeId ? { modeId: this.snapshot.modeId } : {}),
-          ...(this.snapshot.boundAssetId
-            ? { boundAssetId: this.snapshot.boundAssetId }
-            : {}),
-          ...(this.snapshot.panelOpen && ownsLaunch
+            : wasActive
+              ? { active: undefined }
+              : {}),
+          ...(this.snapshot.panelOpen &&
+          (ownsPendingLaunch || ownsConsumedContext)
             ? {
                 launchRequest: Object.freeze({
                   id: this.launchId,
@@ -140,7 +157,7 @@ export class WorkbenchConversationRuntime {
               }
             : this.snapshot.launchRequest
               ? { launchRequest: this.snapshot.launchRequest }
-              : {}),
+              : { launchRequest: undefined }),
         });
       });
     };
@@ -278,10 +295,13 @@ export class WorkbenchConversationRuntime {
 
   consumeLaunchRequest(requestId: number): void {
     if (this.snapshot.launchRequest?.id !== requestId) return;
-    this.consumedLaunchOwners.set(
-      requestId,
-      this.snapshot.launchRequest.sourceOwnerId,
-    );
+    const request = this.snapshot.launchRequest;
+    this.consumedLaunchOwners.set(requestId, request.sourceOwnerId);
+    if (request.contextSource) {
+      this.transientContextRequestId = requestId;
+    } else if (request.clearContext) {
+      this.transientContextRequestId = undefined;
+    }
     if (this.consumedLaunchOwners.size > 128) {
       this.consumedLaunchOwners.delete(
         this.consumedLaunchOwners.keys().next().value!,
@@ -351,6 +371,7 @@ export class WorkbenchConversationRuntime {
     this.activeRegistration = undefined;
     this.registrations.clear();
     this.consumedLaunchOwners.clear();
+    this.transientContextRequestId = undefined;
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }

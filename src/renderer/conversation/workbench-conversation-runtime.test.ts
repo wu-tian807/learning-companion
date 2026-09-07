@@ -205,6 +205,79 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.resolveContribution(source('pdf', 'pdf'))).toBeDefined();
   });
 
+  it('preserves the selected conversation identity when an unrelated active viewport closes', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('material.viewport', 'pdf', contribution('pdf'));
+    const closeNotebook = runtime.register(
+      'notebook.viewport',
+      'note',
+      contribution('markdown'),
+    );
+    runtime.open({
+      ownerId: 'material.viewport',
+      conversationId: 'conversation-42',
+      context: { captured: 'selection' },
+    });
+
+    closeNotebook();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      conversationId: 'conversation-42',
+      launchRequest: { conversationId: 'conversation-42' },
+    });
+  });
+
+  it('clears a closing source context even when another viewport is visually active', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const closeMaterial = runtime.register(
+      'material.viewport',
+      'pdf',
+      contribution('pdf'),
+    );
+    runtime.register('notebook.viewport', 'note', contribution('markdown'));
+    runtime.open({
+      ownerId: 'material.viewport',
+      conversationId: 'conversation-42',
+      context: { captured: 'selection' },
+    });
+
+    closeMaterial();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      conversationId: 'conversation-42',
+      active: { assetId: 'note' },
+      launchRequest: { clearContext: true },
+    });
+  });
+
+  it('clears a consumed source context when its source closes', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const closeMaterial = runtime.register(
+      'material.viewport',
+      'pdf',
+      contribution('pdf'),
+    );
+    runtime.register('notebook.viewport', 'note', contribution('markdown'));
+    runtime.open({
+      ownerId: 'material.viewport',
+      conversationId: 'conversation-42',
+      context: { captured: 'selection' },
+    });
+    const requestId = runtime.getSnapshot().launchRequest!.id;
+    runtime.consumeLaunchRequest(requestId);
+
+    closeMaterial();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      conversationId: 'conversation-42',
+      active: { assetId: 'note' },
+      launchRequest: { clearContext: true },
+    });
+  });
+
   it('clears only transient context when its Workbench unmounts', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const unregister = runtime.register(

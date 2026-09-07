@@ -146,8 +146,12 @@ describe('workbench Target bridge', () => {
     });
 
     expect(selectAsset).toHaveBeenCalledOnce();
-    expect(reveal).toHaveBeenCalledWith(target);
-    expect(emphasize).toHaveBeenCalledWith(target);
+    expect(reveal).toHaveBeenCalledWith(target, {
+      signal: expect.any(AbortSignal),
+    });
+    expect(emphasize).toHaveBeenCalledWith(target, {
+      signal: expect.any(AbortSignal),
+    });
   });
 
   it('does not select or reveal after navigation has been cancelled', async () => {
@@ -164,5 +168,61 @@ describe('workbench Target bridge', () => {
       }),
     ).rejects.toMatchObject({ name: 'AbortError' });
     expect(selectAsset).not.toHaveBeenCalled();
+  });
+
+  it('cancels an in-flight reveal before its Workbench commits follow-up navigation', async () => {
+    let finishReveal: (() => void) | undefined;
+    const reveal = vi.fn(
+      (_target, options?: { readonly signal?: AbortSignal }) =>
+        new Promise<boolean>((resolve) => {
+          expect(options?.signal).toBeDefined();
+          finishReveal = () => resolve(true);
+        }),
+    );
+    const emphasize = vi.fn();
+    const dispose = registerWorkbenchTargetController('pdf', 'asset', {
+      reveal,
+      emphasize,
+    });
+    const controller = new AbortController();
+    const navigation = selectAndRevealWorkbenchTarget({
+      assetId: 'asset',
+      target,
+      selectAsset: vi.fn(),
+      signal: controller.signal,
+      emphasize: true,
+      ownerId: 'pdf',
+    });
+
+    await vi.waitFor(() => expect(reveal).toHaveBeenCalledOnce());
+    controller.abort(new DOMException('newer navigation', 'AbortError'));
+    finishReveal!();
+
+    await expect(navigation).rejects.toMatchObject({ name: 'AbortError' });
+    expect(emphasize).not.toHaveBeenCalled();
+    dispose();
+  });
+
+  it('does not complete a reveal after the exact owner registration is replaced', async () => {
+    let finishReveal: (() => void) | undefined;
+    const reveal = vi.fn(
+      () => new Promise<boolean>((resolve) => {
+        finishReveal = () => resolve(true);
+      }),
+    );
+    registerWorkbenchTargetController('pdf', 'asset', { reveal });
+    const navigation = selectAndRevealWorkbenchTarget({
+      assetId: 'asset',
+      target,
+      selectAsset: vi.fn(),
+      signal: new AbortController().signal,
+      ownerId: 'pdf',
+    });
+
+    await vi.waitFor(() => expect(reveal).toHaveBeenCalledOnce());
+    registerWorkbenchTargetController('pdf', 'asset', { reveal: () => true });
+    finishReveal!();
+
+    await expect(navigation).rejects.toMatchObject({ name: 'AbortError' });
   });
 });
