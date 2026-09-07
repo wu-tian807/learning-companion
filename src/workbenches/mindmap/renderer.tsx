@@ -83,6 +83,7 @@ function MindMapCanvas({
   executeCommand,
   onSelectAsset,
   onInteractionChange,
+  onLocationSelectionChange,
   onReveal,
   onError,
   payload,
@@ -187,12 +188,18 @@ function MindMapCanvas({
   const selectNode = useCallback(
     (nodeId: string) => {
       setSelectedNodeId(nodeId);
+      const target = createMindMapNodeTarget(nodeId);
       onInteractionChange({
-        focus: createMindMapNodeTarget(nodeId),
+        focus: target,
         inputs: [],
       });
+      onLocationSelectionChange?.({
+        target,
+        sourceRevision: payload.revision,
+        text: payload.document.nodes[nodeId]?.title ?? '思维导图节点',
+      });
     },
-    [onInteractionChange],
+    [onInteractionChange, onLocationSelectionChange, payload.document.nodes, payload.revision],
   );
 
   const updateNodeViewState = useCallback(
@@ -316,6 +323,7 @@ function MindMapCanvas({
       sourceRevision: payload.revision,
       reveal: revealTarget,
     },
+    bootstrap.viewportId,
   ), [asset.id, bootstrap.sessionId, payload.revision, revealTarget]);
 
   const reveal = useCallback(async () => {
@@ -467,13 +475,18 @@ function MindMapCanvas({
       } as const;
       setSelectedNodeId(node.id);
       onInteractionChange(interaction);
+      onLocationSelectionChange?.({
+        target: interaction.focus,
+        sourceRevision: payload.revision,
+        text: payload.document.nodes[node.id]?.title ?? '思维导图节点',
+      });
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
         interaction,
       );
     },
-    [bootstrap.sessionId, onInteractionChange, runtime],
+    [bootstrap.sessionId, onInteractionChange, onLocationSelectionChange, payload.document.nodes, payload.revision, runtime],
   );
 
   const openPaneContextMenu = useCallback(
@@ -481,13 +494,14 @@ function MindMapCanvas({
       event.preventDefault();
       setSelectedNodeId(undefined);
       onInteractionChange(EMPTY_WORKBENCH_INTERACTION);
+      onLocationSelectionChange?.(undefined);
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
         EMPTY_WORKBENCH_INTERACTION,
       );
     },
-    [bootstrap.sessionId, onInteractionChange, runtime],
+    [bootstrap.sessionId, onInteractionChange, onLocationSelectionChange, runtime],
   );
 
   const handleMoveEnd = useCallback(
@@ -685,6 +699,7 @@ export const mindMapRendererWorkbenchModule: RendererWorkbenchModule<
   typeof mindMapWorkbenchManifest.id
 > = {
   manifest: mindMapWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: MindMapWorkbenchView,
 };
 

@@ -101,6 +101,7 @@ async function mountVideoWorkbench(input: {
   readonly payload: WorkbenchBootstrap['payload'];
   readonly executeCommand: VideoViewProps['executeCommand'];
   readonly subscribeEvent?: VideoViewProps['subscribeEvent'];
+  readonly onLocationSelectionChange?: VideoViewProps['onLocationSelectionChange'];
   readonly explanations?: readonly VideoExplanationView[];
   readonly conversationRuntime?: WorkbenchConversationRuntime;
 }) {
@@ -143,6 +144,7 @@ async function mountVideoWorkbench(input: {
             onRefresh={vi.fn()}
             onReveal={vi.fn()}
             onInteractionChange={vi.fn()}
+            onLocationSelectionChange={input.onLocationSelectionChange}
             onOpenExternal={vi.fn(async () => undefined)}
             onError={vi.fn()}
           />
@@ -443,7 +445,9 @@ describe('VideoWorkbenchView', () => {
   });
 
   it('selects by left click or drag, replaces the region, and keeps right click inactive', async () => {
+    const onLocationSelectionChange = vi.fn();
     const view = await mountVideoWorkbench({
+      onLocationSelectionChange,
       executeCommand: vi.fn(
         async (command: { readonly type: string }) => ({
           payload:
@@ -556,7 +560,16 @@ describe('VideoWorkbenchView', () => {
       ).toBeNull();
       expect(
         container.querySelector('[aria-label="已选择的视频画面区域"]'),
-      ).toBeNull();
+      ).not.toBeNull();
+      expect(onLocationSelectionChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sourceRevision: '100',
+          text: '视频画面区域',
+          target: expect.objectContaining({
+            targetType: 'video.frame-region',
+          }),
+        }),
+      );
 
       await act(async () => {
         surface.dispatchEvent(pointer('pointerdown', 500, 300));
@@ -579,7 +592,7 @@ describe('VideoWorkbenchView', () => {
       });
       expect(
         container.querySelector('[aria-label="已选择的视频画面区域"]'),
-      ).toBeNull();
+      ).not.toBeNull();
 
       await act(async () => {
         surface.dispatchEvent(pointer('pointerdown', 300, 200));
@@ -606,7 +619,7 @@ describe('VideoWorkbenchView', () => {
       ).toBeNull();
       expect(
         container.querySelector('[aria-label="已选择的视频画面区域"]'),
-      ).toBeNull();
+      ).not.toBeNull();
 
       const contextMenu = new MouseEvent('contextmenu', {
         bubbles: true,
@@ -627,7 +640,7 @@ describe('VideoWorkbenchView', () => {
       ).toBeNull();
       expect(
         container.querySelector('[aria-label="已选择的视频画面区域"]'),
-      ).toBeNull();
+      ).not.toBeNull();
     } finally {
       view.cleanup();
     }

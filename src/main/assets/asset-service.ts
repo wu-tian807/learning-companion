@@ -10,7 +10,6 @@ import {
   type Asset,
   type AssetSnapshot,
   type LocalAssetImportMode,
-  PROJECT_WORKSPACE_CONTENT_BASE,
 } from '../../shared/assets';
 import {
   LOCAL_FILE_CONTENT_KIND,

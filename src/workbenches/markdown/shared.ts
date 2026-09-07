@@ -6,7 +6,7 @@ import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
-  createLocationReferenceCaptureFacilityDeclaration,
+  createLocationReferenceSelectionExportFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
@@ -251,7 +251,7 @@ export const markdownWorkbenchManifest: AssetWorkbenchManifest<
     createTextSelectionInputFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
-    createLocationReferenceCaptureFacilityDeclaration(
+    createLocationReferenceSelectionExportFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
   ],

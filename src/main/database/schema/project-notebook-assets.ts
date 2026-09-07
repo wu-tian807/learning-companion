@@ -14,10 +14,6 @@ export const projectNotebookAssets = sqliteTable('project_notebook_assets', {
   assetId: text('asset_id').references(() => assets.id, {
     onDelete: 'set null',
   }),
-  /** Last legacy row copied into this Asset; kept for recovery/audit only. */
-  legacyRevision: integer('legacy_revision'),
-  /** Durable identity for a legacy-copy operation that has not linked yet. */
-  migrationOperationId: text('migration_operation_id'),
   updatedTime: integer('updated_time').notNull(),
 });
 

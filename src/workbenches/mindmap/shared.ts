@@ -9,6 +9,7 @@ import { MIND_MAP_ASSET_MEDIA_TYPE } from '../../shared/asset-media-types';
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
+  createLocationReferenceSelectionExportFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -55,6 +56,9 @@ export const mindMapWorkbenchManifest: AssetWorkbenchManifest<
     rendererTransportFacilityDeclaration,
     overflowSurfaceFacilityDeclaration,
     createContextMenuSurfaceFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
+    createLocationReferenceSelectionExportFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
   ],

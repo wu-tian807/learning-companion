@@ -9,7 +9,11 @@ vi.mock('vditor', () => ({ default: vi.fn() }));
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
 import { WorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime';
 import { WorkbenchRuntimeContext } from '../../renderer/workbench/runtime/workbench-runtime-context';
-import { getLatestWorkbenchLocationSnapshot, resetWorkbenchLocationSnapshotsForTests } from '../../renderer/workbench/location-snapshot-store';
+import {
+  getLatestWorkbenchLocationSnapshot,
+  publishWorkbenchLocationSnapshot,
+  resetWorkbenchLocationSnapshotsForTests,
+} from '../../renderer/workbench/location-snapshot-store';
 import { MarkdownWorkbenchView } from './renderer';
 import {
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
@@ -36,7 +40,7 @@ describe('Markdown location reference actions', () => {
     vi.restoreAllMocks();
   });
 
-  it('explicitly freezes a clean source selection and inserts it at the current source bookmark', async () => {
+  it('exports a clean source selection automatically and inserts it at the current source bookmark', async () => {
     (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     Object.defineProperty(Range.prototype, 'getClientRects', {
       configurable: true, value: () => [],
@@ -82,6 +86,17 @@ describe('Markdown location reference actions', () => {
               onInteractionChange={(interaction) => {
                 runtime.publishInteraction('note-session', interaction);
               }}
+              onLocationSelectionChange={(selection) => {
+                if (!selection) return;
+                publishWorkbenchLocationSnapshot(markdownWorkbenchManifest, {
+                  ownerId: 'note-session', projectId: asset.projectId,
+                  reference: {
+                    version: 2, projectId: asset.projectId, assetId: asset.id,
+                    target: selection.target, sourceRevision: selection.sourceRevision,
+                  },
+                  text: selection.text,
+                });
+              }}
               onOpenExternal={async () => undefined} onError={vi.fn()}
             />
           </WorkbenchRuntimeContext.Provider>
@@ -100,10 +115,6 @@ describe('Markdown location reference actions', () => {
       }));
       await Promise.resolve();
     });
-    expect(await runtime.invoke(
-      'markdown.capture-location-reference',
-      runtime.store.getState().contextMenu!.invocation,
-    )).toBe('executed');
     expect(getLatestWorkbenchLocationSnapshot('project')?.reference).toMatchObject({
       assetId: 'note', sourceRevision: 'r1',
     });

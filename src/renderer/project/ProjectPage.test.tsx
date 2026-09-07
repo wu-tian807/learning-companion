@@ -13,11 +13,26 @@ const projectPageHarness = vi.hoisted(() => ({
 }));
 
 vi.mock('../conversation/ConversationPanelHost', () => ({
-  ConversationPanelHost: ({ selectedAssetId }: { selectedAssetId?: string }) => (
+  ConversationPanelHost: ({
+    selectedAssetId,
+    compact,
+    onExpand,
+  }: {
+    selectedAssetId?: string;
+    compact?: boolean;
+    onExpand?: () => void;
+  }) => (
     <div
       data-testid="project-conversation-panel"
       data-selected-asset-id={selectedAssetId}
-    />
+      data-compact={String(Boolean(compact))}
+    >
+      {onExpand && (
+        <button type="button" onClick={onExpand}>
+          在右侧展开 AI 问答
+        </button>
+      )}
+    </div>
   ),
 }));
 
@@ -42,24 +57,35 @@ vi.mock('./ProjectAssetPanel', () => ({
   ProjectAssetPanel: () => <div data-testid="assets" />,
 }));
 
-vi.mock('./ProjectNotebookPanel', () => ({
+vi.mock('./ProjectNotebookPanel', async () => {
+  const { useWorkbenchConversationRuntime } = await vi.importActual<
+    typeof import('../conversation/workbench-conversation-context')
+  >('../conversation/workbench-conversation-context');
+  return {
   ProjectNotebookPanel: ({
     active,
     onSelectMaterialAsset,
   }: {
     active: boolean;
     onSelectMaterialAsset: (assetId: string) => Promise<void>;
-  }) => (
-    <div data-testid="notebook-panel" data-active={String(active)}>
-      <button
-        type="button"
-        onClick={() => void onSelectMaterialAsset('asset-html')}
-      >
-        打开普通资料
-      </button>
-    </div>
-  ),
-}));
+  }) => {
+    const runtime = useWorkbenchConversationRuntime();
+    return (
+      <div data-testid="notebook-panel" data-active={String(active)}>
+        <button
+          type="button"
+          onClick={() => void onSelectMaterialAsset('asset-html')}
+        >
+          打开普通资料
+        </button>
+        <button type="button" onClick={() => runtime.open()}>
+          从笔记询问 AI
+        </button>
+      </div>
+    );
+  },
+  };
+});
 
 vi.mock('./use-project-session', () => ({
   useProjectSession: () => ({
@@ -182,6 +208,10 @@ describe('ProjectPage Project conversation lifecycle', () => {
       container.querySelector('[data-testid="generation-center"]')
         ?.parentElement?.getAttribute('aria-hidden'),
     ).toBe('true');
+    expect(
+      container.querySelector('[data-project-right-panel]')
+        ?.getAttribute('data-project-right-panel'),
+    ).toBe('conversation');
 
     await act(async () => button?.click());
     expect(button?.getAttribute('aria-expanded')).toBe('false');
@@ -209,6 +239,53 @@ describe('ProjectPage Project conversation lifecycle', () => {
 
     await act(async () => openButton?.click());
     expect(container.querySelector('[data-testid="notebook-panel"]')).toBeNull();
+  });
+
+  it('opens a floating chat for a notebook-originated request without unmounting the notebook', async () => {
+    await act(async () => {
+      root.render(
+        <ProjectPage
+          project={project}
+          onBack={vi.fn()}
+          onOpenSettings={vi.fn()}
+        />,
+      );
+    });
+
+    const noteButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="打开学习笔记"]',
+    );
+    await act(async () => noteButton?.click());
+    const askFromNotebook = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '从笔记询问 AI',
+    );
+    await act(async () => askFromNotebook?.click());
+
+    expect(
+      container.querySelector('[data-testid="notebook-panel"]')
+        ?.getAttribute('data-active'),
+    ).toBe('true');
+    expect(
+      container.querySelector('[data-project-conversation-presentation]')
+        ?.getAttribute('data-project-conversation-presentation'),
+    ).toBe('floating');
+    expect(
+      container.querySelector('[data-testid="project-conversation-panel"]')
+        ?.getAttribute('data-compact'),
+    ).toBe('true');
+
+    const expand = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent === '在右侧展开 AI 问答',
+    );
+    await act(async () => expand?.click());
+
+    expect(
+      container.querySelector('[data-project-right-panel]')
+        ?.getAttribute('data-project-right-panel'),
+    ).toBe('conversation');
+    expect(
+      container.querySelector('[data-project-conversation-presentation]'),
+    ).toBeNull();
   });
 
   it('keeps the notebook viewport while it opens a referenced normal Asset', async () => {

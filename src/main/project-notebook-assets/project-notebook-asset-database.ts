@@ -62,13 +62,7 @@ export class ProjectNotebookAssetDatabase
           .where(eq(projectNotebookAssets.projectId, projectId))
           .run();
       } else {
-        // The historic nullable columns remain part of the old table schema;
-        // new notebook relations deliberately leave them unused.
-        this.context.db.insert(projectNotebookAssets).values({
-          ...next,
-          legacyRevision: null,
-          migrationOperationId: null,
-        }).run();
+        this.context.db.insert(projectNotebookAssets).values(next).run();
       }
       return cloneProjectNotebookSnapshot({
         projectId: next.projectId,

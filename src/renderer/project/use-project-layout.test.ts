@@ -133,8 +133,7 @@ describe('Project responsive layout', () => {
     expect(note.rightPanel).toBe('learning-note');
     expect(
       reduceProjectLayout(note, {
-        type: 'toggle-right',
-        panel: 'learning-note',
+        type: 'toggle-right', panel: 'learning-note',
       }).rightPanel,
     ).toBeNull();
   });

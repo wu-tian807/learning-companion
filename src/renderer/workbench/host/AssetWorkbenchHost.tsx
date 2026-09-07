@@ -29,6 +29,11 @@ export type { AssetWorkbenchOpenStateChange } from '../workbench-open-coordinato
 import { WorkbenchLifecycleCoordinator } from '../workbench-lifecycle';
 import { closeWorkbenchSession } from '../workbench-session-cleanup';
 import { useWorkbenchRuntime } from '../runtime/workbench-runtime-context';
+import {
+  clearWorkbenchLocationSnapshot,
+  publishWorkbenchLocationSnapshot,
+} from '../location-snapshot-store';
+import type { WorkbenchLocationSelection } from '../renderer-workbench-registry';
 
 interface AssetWorkbenchHostProps {
   readonly projectId: string;
@@ -116,6 +121,54 @@ export function AssetWorkbenchHost({
       runtime.publishInteraction(readySessionId, interaction);
     },
     [assetId, readySessionId, runtime],
+  );
+  const reportLocationSelection = useCallback(
+    (selection: WorkbenchLocationSelection | undefined) => {
+      if (
+        !asset ||
+        !readySessionId ||
+        !settledState ||
+        settledState.kind !== 'ready'
+      ) {
+        return;
+      }
+
+      if (!selection) {
+        clearWorkbenchLocationSnapshot(asset.projectId, readySessionId);
+        return;
+      }
+
+      try {
+        publishWorkbenchLocationSnapshot(settledState.module.manifest, {
+          ownerId: readySessionId,
+          projectId: asset.projectId,
+          reference: {
+            version: 2,
+            projectId: asset.projectId,
+            assetId: asset.id,
+            target: selection.target,
+            sourceRevision: selection.sourceRevision,
+          },
+          text: selection.text,
+        });
+      } catch (selectionError) {
+        const message = userMessageFromError(
+          selectionError,
+          '无法记录当前选区。',
+        );
+        if (message) onError(message);
+      }
+    },
+    [asset, onError, readySessionId, settledState],
+  );
+  useEffect(
+    () => () => {
+      const locationProjectId = asset?.projectId;
+      if (locationProjectId && readySessionId) {
+        clearWorkbenchLocationSnapshot(locationProjectId, readySessionId);
+      }
+    },
+    [asset?.projectId, readySessionId],
   );
   const subscribeEvent = useCallback(
     (
@@ -411,6 +464,7 @@ export function AssetWorkbenchHost({
               onOpenWorkbenchLocation={onOpenWorkbenchLocation}
               onOpenSettings={onOpenSettings}
               onInteractionChange={reportInteraction}
+              onLocationSelectionChange={reportLocationSelection}
               onOpenExternal={openExternal}
               onError={onError}
             />

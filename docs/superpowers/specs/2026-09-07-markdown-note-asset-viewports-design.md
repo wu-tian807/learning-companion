@@ -60,6 +60,12 @@ The notebook viewport never opens a non-Markdown target.  A reference to PDF,
 EPUB, image, video, or another incompatible Asset is routed to a compatible
 material viewport, leaving the notebook editor open.
 
+Opening a Workbench Conversation from the notebook keeps the notebook viewport
+mounted. Project displays that Workbench-initiated conversation as a floating
+overlay; expanding it moves the complete chat to the existing right-side
+Conversation panel. Neither presentation can unregister the notebook's Markdown
+Workbench or discard its selection and conversation contribution.
+
 ## Reference and attachment rules
 
 Markdown link syntax is a versioned transport encoding.  Existing v1 learning
@@ -96,6 +102,5 @@ isolation.  Calling a publish helper directly is not a valid interaction test.
 2. portable target snapshot and common navigation contract;
 3. Markdown-owned reference insertion/activation;
 4. Workbench-by-Workbench AI/selection separation and manual annotations;
-5. notebook Asset viewport, creation and migration from legacy project notes;
+5. notebook Asset viewport and creation;
 6. catalog gate, migration, package and Electron integration evidence.
-

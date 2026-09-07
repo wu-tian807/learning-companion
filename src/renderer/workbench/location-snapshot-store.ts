@@ -6,7 +6,7 @@ import {
 import type { AssetWorkbenchManifest } from '../../shared/workbench/manifest';
 import {
   CORE_FACILITY_VERSION,
-  CORE_LOCATION_REFERENCE_CAPTURE_FACILITY_ID,
+  CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID,
 } from '../../shared/workbench/facilities/core-facilities';
 
 /**
@@ -53,7 +53,7 @@ export function publishWorkbenchLocationSnapshot(
   const projectId = requiredText(snapshot.projectId, 'Project');
   const declared = manifest.facilities.some(
     (facility) =>
-      facility.id === CORE_LOCATION_REFERENCE_CAPTURE_FACILITY_ID &&
+      facility.id === CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID &&
       facility.version === CORE_FACILITY_VERSION,
   );
   if (!declared || !isWorkbenchLocationReference(snapshot.reference) ||

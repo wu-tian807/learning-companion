@@ -19,9 +19,9 @@ export const CORE_CONTEXT_MENU_SURFACE_FACILITY_ID =
   'core.surface.context-menu';
 export const CORE_TEXT_SELECTION_INPUT_FACILITY_ID =
   'core.input.text-selection';
-/** Declares that a Workbench can explicitly freeze a content Target as a link source. */
-export const CORE_LOCATION_REFERENCE_CAPTURE_FACILITY_ID =
-  'core.capture.location-reference';
+/** Declares that a Workbench exports its native selection as a link source. */
+export const CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID =
+  'core.export.location-reference';
 export const CORE_FACILITY_VERSION = 1;
 export const CORE_TEXT_SELECTION_MAX_LENGTH = 16_384;
 export const CORE_FRAME_URL_MAX_LENGTH = 8_192;
@@ -56,8 +56,8 @@ interface TextSelectionFacilityOptions extends CaptureFacilityOptions {
   readonly publish: 'settled' | 'explicit';
 }
 
-interface LocationReferenceCaptureFacilityOptions extends CaptureFacilityOptions {
-  readonly export: 'explicit';
+interface LocationReferenceExportFacilityOptions extends CaptureFacilityOptions {
+  readonly export: 'selection';
 }
 
 export interface CoreTextSelectionFacilityEvent {
@@ -217,14 +217,14 @@ function isTextSelectionFacilityOptions(
   );
 }
 
-function isLocationReferenceCaptureFacilityOptions(
+function isLocationReferenceExportFacilityOptions(
   value: JsonValue | undefined,
-): value is JsonValue & LocationReferenceCaptureFacilityOptions {
+): value is JsonValue & LocationReferenceExportFacilityOptions {
   return (
     isRecord(value) &&
     hasExactKeys(value, ['capture', 'export']) &&
     isTransportId(value.capture) &&
-    value.export === 'explicit'
+    value.export === 'selection'
   );
 }
 
@@ -377,11 +377,11 @@ const textSelectionInputDefinition = defineWorkbenchFacility({
   validateDependencies: capturesDeclaredTransport,
 });
 
-const locationReferenceCaptureDefinition = defineWorkbenchFacility({
-  id: CORE_LOCATION_REFERENCE_CAPTURE_FACILITY_ID,
+const locationReferenceExportDefinition = defineWorkbenchFacility({
+  id: CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID,
   version: CORE_FACILITY_VERSION,
   role: 'capture',
-  validateOptions: isLocationReferenceCaptureFacilityOptions,
+  validateOptions: isLocationReferenceExportFacilityOptions,
   validateDependencies: capturesDeclaredTransport,
 });
 
@@ -394,7 +394,7 @@ export function createCoreWorkbenchFacilityDefinitionRegistry(): WorkbenchFacili
   registry.register(overflowSurfaceDefinition);
   registry.register(contextMenuSurfaceDefinition);
   registry.register(textSelectionInputDefinition);
-  registry.register(locationReferenceCaptureDefinition);
+  registry.register(locationReferenceExportDefinition);
 
   return registry;
 }
@@ -444,12 +444,12 @@ export function createTextSelectionInputFacilityDeclaration(
   };
 }
 
-export function createLocationReferenceCaptureFacilityDeclaration(
+export function createLocationReferenceSelectionExportFacilityDeclaration(
   capture: CoreWorkbenchTransportFacilityId,
 ): WorkbenchFacilityDeclaration {
   return {
-    id: CORE_LOCATION_REFERENCE_CAPTURE_FACILITY_ID,
+    id: CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID,
     version: CORE_FACILITY_VERSION,
-    options: { capture, export: 'explicit' },
+    options: { capture, export: 'selection' },
   };
 }

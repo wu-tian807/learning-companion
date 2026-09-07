@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 
 import { parseWorkbenchLocationHref } from '../../shared/workbench/location-reference';
-import { parseProjectLearningNoteTargetHref } from '../../shared/project-learning-notes';
 import { selectAndRevealWorkbenchTarget } from '../workbench/host/workbench-target-bridge';
 import { clearWorkbenchLocationSnapshot } from '../workbench/location-snapshot-store';
 
@@ -28,17 +27,7 @@ export function useProjectWorkbenchLocationNavigation(
 
   return useCallback(
     async (href: string) => {
-      const modern = parseWorkbenchLocationHref(href);
-      const legacy = modern ? undefined : parseProjectLearningNoteTargetHref(href);
-      const reference = modern ?? (legacy
-        ? {
-            version: 2 as const,
-            projectId: legacy.projectId,
-            assetId: legacy.assetId,
-            target: legacy.target,
-            sourceRevision: legacy.sourceRevision,
-          }
-        : undefined);
+      const reference = parseWorkbenchLocationHref(href);
       if (!reference || reference.projectId !== projectId) {
         throw new Error('这条位置引用不属于当前 Project。');
       }

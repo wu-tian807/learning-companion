@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { WorkbenchEventBus } from '../../main/workbench/workbench-event-bus';
 import { MarkdownWorkbenchProvider } from './main';
 import { MarkdownWorkbenchView } from './renderer';
-import { createMarkdownSyncSourceCommand, DEFAULT_MARKDOWN_WORKBENCH_STATE, markdownCommands, markdownWorkbenchManifest } from './shared';
+import { createMarkdownSyncSourceCommand, DEFAULT_MARKDOWN_WORKBENCH_STATE, markdownWorkbenchManifest } from './shared';
 import { WorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime';
 import { WorkbenchRuntimeContext } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';

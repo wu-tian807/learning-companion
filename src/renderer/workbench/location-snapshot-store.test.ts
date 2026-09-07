@@ -63,11 +63,11 @@ describe('Workbench location snapshot store', () => {
     })).toThrow('位置快照能力');
   });
 
-  it('requires a manifest to opt into explicit location capture', () => {
+  it('requires a manifest to opt into selection location export', () => {
     expect(() => publishWorkbenchLocationSnapshot({
       ...markdownWorkbenchManifest,
       facilities: markdownWorkbenchManifest.facilities.filter(
-        (facility) => facility.id !== 'core.capture.location-reference',
+        (facility) => facility.id !== 'core.export.location-reference',
       ),
     }, {
       ownerId: 'session', projectId: 'project-a', reference, text: 'text',

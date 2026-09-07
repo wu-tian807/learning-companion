@@ -47,7 +47,7 @@ function fixture() {
 }
 
 describe('ProjectNotebookAssetService', () => {
-  it('does not read a legacy project_learning_notes body', async () => {
+  it('returns an empty notebook before a Markdown Asset is created', async () => {
     const { service, createMarkdownNote } = fixture();
     await expect(service.get('project')).resolves.toEqual({ projectId: 'project' });
     expect(createMarkdownNote).not.toHaveBeenCalled();

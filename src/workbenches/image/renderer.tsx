@@ -380,6 +380,7 @@ export function ImageWorkbenchView({
   onRefresh,
   onReveal,
   onError,
+  onLocationSelectionChange,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isImageWorkbenchPayload(bootstrap.payload)
@@ -475,6 +476,7 @@ export function ImageWorkbenchView({
           return true;
         },
       },
+      bootstrap.viewportId,
     );
   }, [asset.id, conversationOwnerId, loadState.kind]);
   const conversationContribution = useMemo(
@@ -499,17 +501,19 @@ export function ImageWorkbenchView({
     setActiveExplanationId(undefined);
     setExplanationIndexOpen(false);
     setSelectedTarget(undefined);
+    onLocationSelectionChange?.(undefined);
     setSelectionRectangle(undefined);
     setSelectionStart(undefined);
     setSelectionMode(true);
-  }, [runtime]);
+  }, [onLocationSelectionChange, runtime]);
 
   const cancelRegionSelection = useCallback(() => {
     setSelectionMode(false);
     setSelectionStart(undefined);
     setSelectionRectangle(undefined);
     setSelectedTarget(undefined);
-  }, []);
+    onLocationSelectionChange?.(undefined);
+  }, [onLocationSelectionChange]);
 
   const createExplanation = useCallback(() => {
     if (!selectedTarget || !payload) return;
@@ -1148,7 +1152,14 @@ export function ImageWorkbenchView({
     setSelectedTarget(target);
     setSelectionMode(false);
     setOverlayRevision((current) => current + 1);
-  }, [pointerPosition, selectionStart]);
+    if (payload?.sourceRevision) {
+      onLocationSelectionChange?.({
+        target,
+        sourceRevision: payload.sourceRevision,
+        text: '图片框选区域',
+      });
+    }
+  }, [onLocationSelectionChange, payload?.sourceRevision, pointerPosition, selectionStart]);
 
   if (!payload) {
     return (
@@ -1441,5 +1452,6 @@ export const imageRendererWorkbenchModule: RendererWorkbenchModule<
   typeof imageWorkbenchManifest.id
 > = {
   manifest: imageWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: ImageWorkbenchView,
 };

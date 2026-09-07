@@ -361,6 +361,8 @@ export function ConversationPanel({
   onOpenSettings,
   onError,
   presentation = DEFAULT_PRESENTATION,
+  compact = false,
+  onExpand,
 }: {
   readonly state: ConversationControllerState;
   readonly actions: ConversationControllerActions;
@@ -377,6 +379,8 @@ export function ConversationPanel({
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
   readonly presentation?: ConversationModePresentation;
+  readonly compact?: boolean;
+  readonly onExpand?: () => void;
 }) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -395,6 +399,10 @@ export function ConversationPanel({
   useEffect(() => {
     if (state.tab === 'chat') inputRef.current?.focus();
   }, [state.tab]);
+
+  useEffect(() => {
+    if (compact && state.tab !== 'chat') actions.setTab('chat');
+  }, [actions, compact, state.tab]);
 
   const selectedAnswerMessage = useMemo(
     () => messages.find((message) => message.id === selectedAnswer?.messageId),
@@ -475,7 +483,7 @@ export function ConversationPanel({
       aria-label={presentation.ariaLabel}
       className="flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-[17px] border border-white/[0.07] bg-[#1a1f26] shadow-[-20px_0_50px_rgba(0,0,0,0.28)]"
     >
-      <header className="shrink-0 border-b border-white/[0.075] px-4 pb-2 pt-3">
+      <header className={`shrink-0 border-b border-white/[0.075] ${compact ? 'px-3 py-2' : 'px-4 pb-2 pt-3'}`}>
         <div className="flex items-center gap-2">
           <span className="size-2.5 rounded-[4px] bg-gradient-to-br from-indigo-400 to-fuchsia-400 shadow-[0_0_10px_rgba(129,140,248,0.7)]" />
           <div className="min-w-0">
@@ -491,7 +499,7 @@ export function ConversationPanel({
               {notice}
             </span>
           )}
-          {presentation.allowNewConversation !== false && (
+          {!compact && presentation.allowNewConversation !== false && (
             <button
               type="button"
               disabled={state.busy}
@@ -499,6 +507,16 @@ export function ConversationPanel({
               className={`${notice ? '' : 'ml-auto '}rounded-lg border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:border-indigo-300/30 hover:text-indigo-200 disabled:opacity-40`}
             >
               ＋ {presentation.newConversationLabel ?? '新对话'}
+            </button>
+          )}
+          {compact && onExpand && (
+            <button
+              type="button"
+              aria-label="展开 AI 问答"
+              onClick={onExpand}
+              className="ml-auto rounded-lg border border-white/10 px-2 py-1 text-[10px] text-slate-400 hover:border-indigo-300/30 hover:text-indigo-200"
+            >
+              展开
             </button>
           )}
           <button
@@ -515,25 +533,27 @@ export function ConversationPanel({
             ×
           </button>
         </div>
-        <nav className="mt-2 flex gap-1" aria-label="AI 问答页签">
-          {(['chat', 'history'] as const).map((tab) => (
-            <button
-              key={tab}
-              type="button"
-              onClick={() => actions.setTab(tab)}
-              className={`rounded-t-md px-3 py-1.5 text-[11px] ${
-                state.tab === tab
-                  ? 'border-b-2 border-indigo-300 text-indigo-200'
-                  : 'text-slate-500 hover:text-slate-300'
-              } disabled:opacity-40`}
-            >
-              {tab === 'chat'
-                ? '对话'
-                : `历史${state.history.length ? ` ${state.history.length}` : ''}`}
-            </button>
-          ))}
-        </nav>
-        {Status && (
+        {!compact && (
+          <nav className="mt-2 flex gap-1" aria-label="AI 问答页签">
+            {(['chat', 'history'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => actions.setTab(tab)}
+                className={`rounded-t-md px-3 py-1.5 text-[11px] ${
+                  state.tab === tab
+                    ? 'border-b-2 border-indigo-300 text-indigo-200'
+                    : 'text-slate-500 hover:text-slate-300'
+                } disabled:opacity-40`}
+              >
+                {tab === 'chat'
+                  ? '对话'
+                  : `历史${state.history.length ? ` ${state.history.length}` : ''}`}
+              </button>
+            ))}
+          </nav>
+        )}
+        {!compact && Status && (
           <Status
             projectId={projectId}
             boundAssetId={state.conversation.boundAssetId}
@@ -542,7 +562,7 @@ export function ConversationPanel({
         )}
       </header>
 
-      {state.tab === 'history' ? (
+      {!compact && state.tab === 'history' ? (
         <HistoryView
           history={state.history}
           loading={state.historyLoading}
@@ -554,7 +574,7 @@ export function ConversationPanel({
       ) : (
         <>
           <div
-            className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4"
+            className={`min-h-0 flex-1 ${compact ? 'space-y-3 px-3 py-3' : 'space-y-4 px-4 py-4'} overflow-y-auto`}
             role="log"
             aria-label="对话消息"
           >
@@ -626,7 +646,7 @@ export function ConversationPanel({
             <div ref={messagesEndRef} />
           </div>
 
-          <footer className="shrink-0 border-t border-white/[0.075] p-3">
+          <footer className={`shrink-0 border-t border-white/[0.075] ${compact ? 'p-2.5' : 'p-3'}`}>
             {state.error && (
               <div
                 role="alert"

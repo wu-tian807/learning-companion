@@ -24,6 +24,8 @@ export function ConversationPanelHost({
   onSelectAsset,
   onOpenSettings,
   onError,
+  compact = false,
+  onExpand,
   mode = projectConversationMode,
   modeRegistry = defaultConversationModeRegistry,
   workspace,
@@ -35,6 +37,8 @@ export function ConversationPanelHost({
   readonly onSelectAsset: (assetId: string) => Promise<void> | void;
   readonly onOpenSettings?: () => void;
   readonly onError?: (message: string) => void;
+  readonly compact?: boolean;
+  readonly onExpand?: () => void;
   readonly mode?: ConversationModeDefinition;
   readonly modeRegistry?: ConversationModeRegistry;
   readonly workspace?: ConversationWorkspaceBinding;
@@ -105,6 +109,8 @@ export function ConversationPanelHost({
           onOpenSettings={onOpenSettings}
           onError={onError}
           presentation={activeMode.presentation}
+          compact={compact}
+          onExpand={onExpand}
         />
       )}
     </ConversationSession>

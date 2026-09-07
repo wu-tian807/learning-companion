@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import type { AssetSnapshot } from '../../shared/assets';
-import type { ProjectNotebookSnapshot } from '../../shared/project-notebook-assets';
+import { isAssetSnapshot, type AssetSnapshot } from '../../shared/assets';
+import {
+  isProjectNotebookSnapshot,
+  type ProjectNotebookSnapshot,
+} from '../../shared/project-notebook-assets';
 import { userMessageFromError } from '../../shared/ipc-error';
 
 export type ProjectNotebookLoadState =
@@ -62,6 +65,7 @@ export function useProjectNotebook(
         projectEpoch.current.value !== epoch ||
         projectEpoch.current.projectId !== projectId ||
         operationVersion.current !== operation ||
+        !isProjectNotebookSnapshot(snapshot) ||
         snapshot.projectId !== projectId
       ) {
         return;
@@ -107,7 +111,11 @@ export function useProjectNotebook(
           projectId,
           ...(name?.trim() ? { name: name.trim() } : {}),
         });
-        if (asset.projectId !== projectId || asset.mediaType !== 'text/markdown') {
+        if (
+          !isAssetSnapshot(asset) ||
+          asset.projectId !== projectId ||
+          asset.mediaType !== 'text/markdown'
+        ) {
           throw new Error('新建笔记响应无效。');
         }
         if (
@@ -147,7 +155,11 @@ export function useProjectNotebook(
       projectId,
       assetId,
     });
-    if (snapshot.projectId !== projectId) {
+    if (
+      !isProjectNotebookSnapshot(snapshot) ||
+      snapshot.projectId !== projectId ||
+      snapshot.assetId !== assetId
+    ) {
       throw new Error('项目笔记选择响应无效。');
     }
     if (

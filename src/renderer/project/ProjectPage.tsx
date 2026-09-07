@@ -38,6 +38,8 @@ interface ProjectPageProps {
   readonly onOpenSettings: () => void;
 }
 
+type ProjectConversationPresentation = 'floating' | 'right';
+
 function BackIcon() {
   return (
     <svg
@@ -71,6 +73,8 @@ export function ProjectPage({
     useWorkbenchConversationSnapshot(conversationRuntime);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conversationPresentation, setConversationPresentation] =
+    useState<ProjectConversationPresentation>('floating');
   const leftToggleRef = useRef<HTMLButtonElement>(null);
   const rightToggleRef = useRef<HTMLButtonElement>(null);
   const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
@@ -166,6 +170,7 @@ export function ProjectPage({
         session.selectAsset(assetId);
       }
       if (result.conversation) {
+        setConversationPresentation('floating');
         await conversationRuntime.openAndWait(result.conversation);
       }
     },
@@ -230,60 +235,54 @@ export function ProjectPage({
     if (layout.rightPanel === 'conversation') {
       openRight('generation');
     }
+    setConversationPresentation('floating');
   }, [conversationRuntime, layout.rightPanel, openRight]);
+  const conversationInRightPanel =
+    conversationSnapshot.panelOpen &&
+    conversationPresentation === 'right' &&
+    layout.rightPanel === 'conversation';
   const toggleLeftPanel = useCallback(() => {
     if (
       layout.mode === 'small' &&
       !layout.leftOpen &&
-      layout.rightPanel === 'conversation'
+      conversationInRightPanel
     ) {
       dismissConversationPanel();
     }
     toggleLeft();
   }, [
+    conversationInRightPanel,
     dismissConversationPanel,
     layout.leftOpen,
     layout.mode,
-    layout.rightPanel,
     toggleLeft,
   ]);
   const toggleGenerationPanel = useCallback(() => {
-    if (conversationSnapshot.panelOpen) {
+    if (conversationInRightPanel) {
       dismissConversationPanel();
       return;
     }
     toggleRight('generation');
-  }, [
-    conversationSnapshot.panelOpen,
-    dismissConversationPanel,
-    toggleRight,
-  ]);
+  }, [conversationInRightPanel, dismissConversationPanel, toggleRight]);
   const toggleLearningNotePanel = useCallback(() => {
-    if (conversationSnapshot.panelOpen) {
+    if (conversationInRightPanel) {
       dismissConversationPanel();
     }
     toggleRight('learning-note');
-  }, [
-    conversationSnapshot.panelOpen,
-    dismissConversationPanel,
-    toggleRight,
-  ]);
+  }, [conversationInRightPanel, dismissConversationPanel, toggleRight]);
   const toggleConversationPanel = useCallback(() => {
-    if (
-      layout.rightPanel === 'conversation' &&
-      conversationSnapshot.panelOpen
-    ) {
+    if (conversationSnapshot.panelOpen) {
       dismissConversationPanel();
       return;
     }
 
+    setConversationPresentation('right');
     conversationRuntime.open();
     openRight('conversation');
   }, [
     conversationRuntime,
     conversationSnapshot.panelOpen,
     dismissConversationPanel,
-    layout.rightPanel,
     openRight,
   ]);
   const closeConversationPanel = useCallback(() => {
@@ -337,14 +336,6 @@ export function ProjectPage({
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [closeOpenOverlay, openOverlay]);
-
-  useEffect(() => {
-    if (conversationSnapshot.panelOpen) {
-      openRight('conversation');
-    } else if (layout.rightPanel === 'conversation') {
-      openRight('generation');
-    }
-  }, [conversationSnapshot.panelOpen, layout.rightPanel, openRight]);
 
   return (
     <main
@@ -477,7 +468,7 @@ export function ProjectPage({
                   />
                 </div>
               )}
-              <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+              <div className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden">
                 <AssetWorkbenchHost
                   projectId={project.id}
                   asset={assetOperations.selectedAsset}
@@ -511,20 +502,44 @@ export function ProjectPage({
                   onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                   onError={setError}
                 />
+                {conversationSnapshot.panelOpen &&
+                  conversationPresentation === 'floating' && (
+                  <div
+                    data-project-conversation-presentation={conversationPresentation}
+                    className="absolute bottom-3 right-3 z-40 h-[min(30rem,calc(100%-1.5rem))] w-[min(25rem,calc(100%-1.5rem))] min-h-0"
+                  >
+                    <ConversationPanelHost
+                      projectId={project.id}
+                      historyStore={conversationHistoryStore}
+                      selectedAssetId={assetOperations.selectedAsset?.id}
+                      onClose={closeConversationPanel}
+                      onSelectAsset={selectConversationAsset}
+                      onOpenSettings={onOpenSettings}
+                      onError={setError}
+                      compact
+                      onExpand={() => {
+                        setConversationPresentation('right');
+                        openRight('conversation');
+                      }}
+                    />
+                  </div>
+                )}
               </div>
               <ProjectRightPanelSlot
                 panel={layout.rightPanel}
                 inline={layout.rightInline}
                 conversation={
-                  <ConversationPanelHost
-                    projectId={project.id}
-                    historyStore={conversationHistoryStore}
-                    selectedAssetId={assetOperations.selectedAsset?.id}
-                    onClose={closeConversationPanel}
-                    onSelectAsset={selectConversationAsset}
-                    onOpenSettings={onOpenSettings}
-                    onError={setError}
-                  />
+                  conversationPresentation === 'right' ? (
+                    <ConversationPanelHost
+                      projectId={project.id}
+                      historyStore={conversationHistoryStore}
+                      selectedAssetId={assetOperations.selectedAsset?.id}
+                      onClose={closeConversationPanel}
+                      onSelectAsset={selectConversationAsset}
+                      onOpenSettings={onOpenSettings}
+                      onError={setError}
+                    />
+                  ) : null
                 }
                 learningNote={
                   <ProjectNotebookPanel

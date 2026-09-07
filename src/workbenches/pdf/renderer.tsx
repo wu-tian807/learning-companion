@@ -500,6 +500,7 @@ export function PdfDocumentWorkbenchView({
   onRefresh,
   onReveal,
   onInteractionChange,
+  onLocationSelectionChange,
   onOpenExternal,
   onError,
   contributionOwnerId,
@@ -533,6 +534,24 @@ export function PdfDocumentWorkbenchView({
   const [loadState, setLoadState] = useState<PdfLoadState>({
     kind: 'loading',
   });
+  const reportPdfInteraction = useCallback(
+    (interaction: WorkbenchInteractionSnapshot) => {
+      const mapped = mapInteraction(interaction);
+      onInteractionChange(mapped);
+      const selection = findTextSelectionInput(mapped);
+      if (!selection || !payload?.sourceRevision) {
+        onLocationSelectionChange?.(undefined);
+        return mapped;
+      }
+      onLocationSelectionChange?.({
+        target: selection.target,
+        sourceRevision: payload.sourceRevision,
+        text: selection.text,
+      });
+      return mapped;
+    },
+    [mapInteraction, onInteractionChange, onLocationSelectionChange, payload?.sourceRevision],
+  );
 
   useEffect(() => {
     if (loadState.kind !== 'ready') return;
@@ -587,6 +606,7 @@ export function PdfDocumentWorkbenchView({
         resolve,
         reveal,
       },
+      bootstrap.viewportId,
     );
     container?.addEventListener('scroll', notifyLayout, { passive: true });
     return () => {
@@ -793,11 +813,7 @@ export function PdfDocumentWorkbenchView({
             },
             onSelectionChange(selection) {
               if (active) {
-                onInteractionChange(
-                  mapInteraction(
-                    interactionFromTextSelection(selection),
-                  ),
-                );
+                reportPdfInteraction(interactionFromTextSelection(selection));
               }
             },
             onFindStatusChange(status) {
@@ -847,7 +863,7 @@ export function PdfDocumentWorkbenchView({
     return () => {
       active = false;
       readyRef.current = false;
-      onInteractionChange(mapInteraction({ inputs: [] }));
+      reportPdfInteraction({ inputs: [] });
 
       if (saveTimerRef.current !== undefined) {
         window.clearTimeout(saveTimerRef.current);
@@ -870,8 +886,7 @@ export function PdfDocumentWorkbenchView({
   }, [
     onError,
     onOpenExternal,
-    onInteractionChange,
-    mapInteraction,
+    reportPdfInteraction,
     payload,
     persistViewState,
     scheduleViewStateSave,
@@ -1184,6 +1199,13 @@ export function PdfDocumentWorkbenchView({
           },
         };
         const target = mapInteraction({ focus: rawTarget, inputs: [] }).focus ?? rawTarget;
+        if (payload?.sourceRevision && target.scope === 'content') {
+          onLocationSelectionChange?.({
+            target,
+            sourceRevision: payload.sourceRevision,
+            text: `第 ${region.pageNumber} 页框选区域`,
+          });
+        }
         setCompletedRegionContext(createDocumentConversationContext({
           target,
           pageNumber: region.pageNumber,
@@ -1208,7 +1230,7 @@ export function PdfDocumentWorkbenchView({
       }
       stopPanning(event);
     },
-    [mapInteraction, onError, stopPanning],
+    [mapInteraction, onError, onLocationSelectionChange, payload?.sourceRevision, stopPanning],
   );
 
   const cancelPointerInteraction = useCallback(
@@ -1890,6 +1912,7 @@ const pdfWorkbenchModule: RendererWorkbenchModule<
   typeof pdfWorkbenchManifest.id
 > = {
   manifest: pdfWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: PdfWorkbenchView,
 };
 

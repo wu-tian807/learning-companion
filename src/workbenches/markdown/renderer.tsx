@@ -21,7 +21,6 @@ import { CodeMirrorEditorActionAdapter } from '../../renderer/workbench/editor/c
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
 import {
   getLatestWorkbenchLocationSnapshot,
-  publishWorkbenchLocationSnapshot,
 } from '../../renderer/workbench/location-snapshot-store';
 import type {
   RendererWorkbenchModule,
@@ -48,9 +47,9 @@ import {
   selectAndRevealWorkbenchTarget,
 } from '../../renderer/workbench/host/workbench-target-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
-import { parseProjectLearningNoteTargetHref } from '../../shared/project-learning-notes';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import type { AssetTarget } from '../../shared/workbench/asset-target';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
 import {
   createWorkbenchLocationHref,
   parseWorkbenchLocationHref,
@@ -122,7 +121,10 @@ async function fileToBase64(file: File): Promise<string> {
 function markdownLocationLinkLabel(text: string): string {
   const compact = text.replace(/\s+/gu, ' ').trim().slice(0, 160);
   const label = compact || '原文位置';
-  return label.replace(/[\\\[\]]/gu, '\\$&');
+  return label
+    .replaceAll('\\', '\\\\')
+    .replaceAll('[', '\\[')
+    .replaceAll(']', '\\]');
 }
 
 /** Returns a portable location href only when the click lies inside its link. */
@@ -136,7 +138,7 @@ export function markdownLocationHrefAt(
     if (!href || match.index === undefined) continue;
     const hrefStart = match.index + match[0].lastIndexOf(href);
     if (offset >= hrefStart && offset < hrefStart + href.length &&
-      (parseWorkbenchLocationHref(href) || parseProjectLearningNoteTargetHref(href))) {
+      parseWorkbenchLocationHref(href)) {
       return href;
     }
   }
@@ -148,17 +150,7 @@ function projectLocationReference(
   projectId: string,
 ) {
   const modern = parseWorkbenchLocationHref(href);
-  if (modern?.projectId === projectId) return modern;
-  const legacy = parseProjectLearningNoteTargetHref(href);
-  return legacy?.projectId === projectId
-    ? {
-        version: 2 as const,
-        projectId: legacy.projectId,
-        assetId: legacy.assetId,
-        target: legacy.target,
-        sourceRevision: legacy.sourceRevision,
-      }
-    : undefined;
+  return modern?.projectId === projectId ? modern : undefined;
 }
 
 function findMarkdownImageByCandidates(
@@ -382,6 +374,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     executeCommand,
     onReveal,
     onInteractionChange,
+    onLocationSelectionChange,
     onOpenExternal,
     onSelectAsset,
     onOpenWorkbenchLocation,
@@ -477,43 +470,25 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const reportMarkdownInteraction = useCallback(
     (interaction: Parameters<typeof onInteractionChange>[0]) => {
       onInteractionChange(interaction);
-    },
-    [onInteractionChange],
-  );
 
-  const captureLocationReference = useCallback(
-    (text: string, target: AssetTarget) => {
-      // The Target and revision are frozen in this same explicit operation.
-      // A dirty in-memory buffer has no honest source revision to export.
+      const selection = findTextSelectionInput(interaction);
       if (
+        !selection ||
         workingBufferRef.current !== diskSource ||
         lineEndingRef.current !== savedLineEnding ||
-        !sourceRevision ||
-        target.scope !== 'content'
+        !sourceRevision
       ) {
-        throw new Error('请先保存 Markdown，再设为引用来源。');
+        onLocationSelectionChange?.(undefined);
+        return;
       }
-      publishWorkbenchLocationSnapshot(markdownWorkbenchManifest, {
-        ownerId: bootstrap.sessionId,
-        projectId: asset.projectId,
-        reference: {
-          version: 2,
-          projectId: asset.projectId,
-          assetId: asset.id,
-          target,
-          sourceRevision,
-        },
-        text,
+
+      onLocationSelectionChange?.({
+        target: selection.target,
+        sourceRevision,
+        text: selection.text,
       });
     },
-    [
-      asset.id,
-      asset.projectId,
-      bootstrap.sessionId,
-      diskSource,
-      savedLineEnding,
-      sourceRevision,
-    ],
+    [diskSource, onInteractionChange, onLocationSelectionChange, savedLineEnding, sourceRevision],
   );
 
   const updateConflictState = useCallback(
@@ -1178,7 +1153,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const insertLocationReference = useCallback(async () => {
     const snapshot = getLatestWorkbenchLocationSnapshot(asset.projectId);
     if (!snapshot) {
-      throw new Error('请先在已保存的资料中选中一段内容。');
+      onError('请先在资料工作台中选中可定位的内容。');
+      return;
     }
     const href = createWorkbenchLocationHref(snapshot.reference);
     const markdown = `[${markdownLocationLinkLabel(snapshot.text)}](${href})`;
@@ -1221,7 +1197,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     selection?.removeAllRanges();
     selection?.addRange(bookmark.range.cloneRange());
     bookmark.adapter.insertMarkdown(markdown);
-  }, [asset.id, asset.projectId, sourceEditorKey, wysiwygEditorKey]);
+  }, [asset.id, asset.projectId, onError, sourceEditorKey, wysiwygEditorKey]);
 
   const resolvePickedImageMediaType = useCallback(
     (file: File) => {
@@ -2173,10 +2149,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         viewState,
         hasSelection: () =>
           activeEditorActionAdapter.getState().canCopy,
-        canCaptureLocationReference: () =>
-          workingBufferRef.current === diskSource &&
-          lineEndingRef.current === savedLineEnding &&
-          Boolean(sourceRevision),
         onAiExplain: (text, target) => {
           conversationRuntime.open({
             ownerId: conversationOwnerId,
@@ -2187,7 +2159,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           });
         },
         onInsertLocationReference: insertLocationReference,
-        onCaptureLocationReference: captureLocationReference,
         onSetEncoding: reopenWithEncoding,
         onSetLineEnding: updateLineEnding,
         onSetViewState: updateViewState,
@@ -2195,7 +2166,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       }),
     [
       dirty,
-      captureLocationReference,
       encoding,
       insertLocationReference,
       lineEnding,
@@ -2491,5 +2461,6 @@ export const markdownRendererWorkbenchModule: RendererWorkbenchModule<
   typeof markdownWorkbenchManifest.id
 > = {
   manifest: markdownWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: MarkdownWorkbenchView,
 };

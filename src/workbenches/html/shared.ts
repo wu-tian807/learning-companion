@@ -6,6 +6,7 @@ import {
 import {
   CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
+  createLocationReferenceSelectionExportFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   sandboxFrameTransportFacilityDeclaration,
@@ -49,6 +50,9 @@ export const htmlWorkbenchManifest: AssetWorkbenchManifest<
       CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
     ),
     createTextSelectionInputFacilityDeclaration(
+      CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
+    ),
+    createLocationReferenceSelectionExportFacilityDeclaration(
       CORE_SANDBOX_FRAME_TRANSPORT_FACILITY_ID,
     ),
   ],

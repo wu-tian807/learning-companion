@@ -170,6 +170,7 @@ export function EpubWorkbenchView({
   onRefresh,
   onReveal,
   onInteractionChange,
+  onLocationSelectionChange,
   onOpenExternal,
   onError,
 }: RendererWorkbenchViewProps) {
@@ -212,6 +213,21 @@ export function EpubWorkbenchView({
   const explanationTaskIdsRef = useRef(new Set<string>());
   const [explanationRuntimeByTaskId, setExplanationRuntimeByTaskId] =
     useState<EpubExplanationRuntimeMap>({});
+  const reportEpubSelection = useCallback(
+    (selection: WorkbenchSelectionSnapshot | undefined) => {
+      onInteractionChange(interactionFromTextSelection(selection));
+      if (!selection || !payload?.sourceRevision) {
+        onLocationSelectionChange?.(undefined);
+        return;
+      }
+      onLocationSelectionChange?.({
+        target: selection.target,
+        sourceRevision: payload.sourceRevision,
+        text: selection.text,
+      });
+    },
+    [onInteractionChange, onLocationSelectionChange, payload?.sourceRevision],
+  );
   const readingNotes = useMemo(
     () =>
       attachments
@@ -273,6 +289,7 @@ export function EpubWorkbenchView({
           targetEmphasisCleanupRef.current = emphasizeEpubRange(range);
         },
       },
+      bootstrap.viewportId,
     );
   }, [asset.id, conversationOwnerId, loadState.kind, payload?.sourceRevision]);
   useEffect(
@@ -333,10 +350,10 @@ export function EpubWorkbenchView({
 
   const reload = useCallback(() => {
     selectionRef.current = undefined;
-    onInteractionChange({ inputs: [] });
+    reportEpubSelection(undefined);
     runtime.closeContextMenu();
     setReaderRevision((current) => current + 1);
-  }, [onInteractionChange, runtime]);
+  }, [reportEpubSelection, runtime]);
 
   const reveal = useCallback(async () => {
     try {
@@ -714,10 +731,9 @@ export function EpubWorkbenchView({
 
           const selection =
             captureEpubSelectionSnapshot(contents);
-          const interaction =
-            interactionFromTextSelection(selection);
           selectionRef.current = selection;
-          onInteractionChange(interaction);
+          reportEpubSelection(selection);
+          const interaction = interactionFromTextSelection(selection);
           runtime.openContextMenu(
             bootstrap.sessionId,
             resolveEpubContextMenuPosition(event, contents),
@@ -772,9 +788,7 @@ export function EpubWorkbenchView({
             contents,
           );
           selectionRef.current = selection;
-          onInteractionChange(
-            interactionFromTextSelection(selection),
-          );
+          reportEpubSelection(selection);
         },
       );
 
@@ -823,7 +837,7 @@ export function EpubWorkbenchView({
       }
       void persistViewState(viewStateRef.current);
       selectionRef.current = undefined;
-      onInteractionChange({ inputs: [] });
+      reportEpubSelection(undefined);
       for (const cleanup of contentCleanups) {
         cleanup();
       }
@@ -836,7 +850,7 @@ export function EpubWorkbenchView({
     };
   }, [
     onOpenExternal,
-    onInteractionChange,
+    reportEpubSelection,
     payload,
     persistViewState,
     readerRevision,
@@ -1433,6 +1447,7 @@ const epubRendererWorkbenchModule: RendererWorkbenchModule<
   typeof epubWorkbenchManifest.id
 > = {
   manifest: epubWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: EpubWorkbenchView,
 };
 

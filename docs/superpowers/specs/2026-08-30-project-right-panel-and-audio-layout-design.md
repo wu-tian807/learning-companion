@@ -4,6 +4,20 @@
 >
 > 日期：2026-08-30
 
+## 2026-09-08 更新：新增 Workbench 问答浮窗
+
+`conversation` 保持为右侧共享插槽的既有视图；顶栏“AI 问答”仍打开完整的右侧聊天栏，
+占用原本聊天栏的布局位置，不覆盖中央 Workbench。
+
+新增的 `floating` 仅服务于 Workbench 内部发起的原文/选区提问，以及生成工具返回的
+问答：它覆盖在中央 Workbench 视口上方，因而不会替换右侧学习笔记。浮窗只显示当前
+会话、当前上下文、消息和输入框；点击“展开”后回到右侧完整聊天栏，历史与“新对话”
+仍只在完整栏展示。
+
+右侧的 `generation`、`conversation` 和 `learning-note` 始终互斥，保留原有宽度、抽屉和
+小屏遮罩规则。问答 runtime、历史、Provider Session 和 Workbench Context Contribution
+的所有权保持不变，只有 Project 页面决定其展示位置。
+
 ## 问题
 
 Project 页面视觉上应始终保持“左侧资料、中间 Workbench、右侧辅助面板”的三屏骨架，

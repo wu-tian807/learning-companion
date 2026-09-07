@@ -33,8 +33,7 @@ import { backfillConversationContextSourcesMigration } from './migrations/0025-b
 import { addConversationExecutionContextMigration } from './migrations/0026-add-conversation-execution-context';
 import { canonicalizeAssetTargetsMigration } from './migrations/0027-canonicalize-asset-targets';
 import { bindProjectConversationsToAssetsMigration } from './migrations/0028-bind-project-conversations-to-assets';
-import { createProjectLearningNotesMigration } from './migrations/0029-create-project-learning-notes';
-import { createProjectNotebookAssetsMigration } from './migrations/0030-create-project-notebook-assets';
+import { createProjectNotebookAssetsMigration } from './migrations/0029-create-project-notebook-assets';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetFolderSchema from './schema/asset-folders';
@@ -44,7 +43,6 @@ import * as assetSchema from './schema/assets';
 import * as generationTaskSchema from './schema/generation-tasks';
 import * as projectSchema from './schema/projects';
 import * as projectConversationSchema from './schema/project-conversations';
-import * as projectLearningNoteSchema from './schema/project-learning-notes';
 import * as projectNotebookAssetSchema from './schema/project-notebook-assets';
 import * as workbenchStateSchema from './schema/workbench-state';
 
@@ -84,7 +82,6 @@ const migrations: readonly DatabaseMigration[] = [
   addConversationExecutionContextMigration,
   canonicalizeAssetTargetsMigration,
   bindProjectConversationsToAssetsMigration,
-  createProjectLearningNotesMigration,
   createProjectNotebookAssetsMigration,
 ];
 const schema = {
@@ -92,7 +89,6 @@ const schema = {
   ...assetFolderSchema,
   ...projectSchema,
   ...projectConversationSchema,
-  ...projectLearningNoteSchema,
   ...projectNotebookAssetSchema,
   ...assetSchema,
   ...assetArtifactSchema,

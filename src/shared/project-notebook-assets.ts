@@ -26,6 +26,18 @@ function isId(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value === value.trim();
 }
 
+/** Validates Main/preload notebook responses before renderer state is updated. */
+export function isProjectNotebookSnapshot(
+  value: unknown,
+): value is ProjectNotebookSnapshot {
+  return (
+    isRecord(value) &&
+    Object.keys(value).every((key) => key === 'projectId' || key === 'assetId') &&
+    isId(value.projectId) &&
+    (value.assetId === undefined || isId(value.assetId))
+  );
+}
+
 export function isProjectNotebookProjectRequest(
   value: unknown,
 ): value is ProjectNotebookProjectRequest {

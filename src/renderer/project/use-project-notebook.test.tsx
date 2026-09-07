@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type { AssetSnapshot } from '../../shared/assets';
 import type { ProjectNotebookController } from './use-project-notebook';
 import { useProjectNotebook } from './use-project-notebook';
 
@@ -11,6 +12,24 @@ function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((next) => { resolve = next; });
   return { promise, resolve };
+}
+
+function notebookAsset(projectId: string, id: string): AssetSnapshot {
+  return {
+    id,
+    projectId,
+    name: '新建笔记',
+    mediaType: 'text/markdown',
+    creationKind: 'generated',
+    contentRef: {
+      kind: 'local-file',
+      base: 'project-workspace',
+      path: `.learning-companion/assets/generated/${id}.md`,
+    },
+    contentStatus: { availability: 'available', checkedTime: 1 },
+    createdTime: 1,
+    updatedTime: 1,
+  };
 }
 
 function Harness({
@@ -44,7 +63,7 @@ describe('useProjectNotebook', () => {
   });
 
   it('coalesces same-frame create requests into one IPC intent', async () => {
-    const creating = deferred<{ id: string; projectId: string; mediaType: string }>();
+    const creating = deferred<AssetSnapshot>();
     const createProjectNotebook = vi.fn(() => creating.promise);
     Object.defineProperty(window, 'learningCompanion', {
       configurable: true,
@@ -66,13 +85,13 @@ describe('useProjectNotebook', () => {
     });
     expect(first).toBe(second);
     expect(createProjectNotebook).toHaveBeenCalledOnce();
-    creating.resolve({ id: 'note-a', projectId: 'a', mediaType: 'text/markdown' });
+    creating.resolve(notebookAsset('a', 'note-a'));
     await act(async () => { await first; });
     expect(controller.state).toMatchObject({ kind: 'ready', snapshot: { assetId: 'note-a' } });
   });
 
   it('does not let an old Project create update the next Project state', async () => {
-    const creating = deferred<{ id: string; projectId: string; mediaType: string }>();
+    const creating = deferred<AssetSnapshot>();
     Object.defineProperty(window, 'learningCompanion', {
       configurable: true,
       value: {
@@ -88,7 +107,7 @@ describe('useProjectNotebook', () => {
     await act(async () => {
       root.render(<Harness projectId="b" enabled onController={(next) => { controller = next; }} />);
     });
-    creating.resolve({ id: 'note-a', projectId: 'a', mediaType: 'text/markdown' });
+    creating.resolve(notebookAsset('a', 'note-a'));
     await act(async () => { await oldCreate; });
 
     expect(controller.state).not.toMatchObject({
@@ -99,7 +118,7 @@ describe('useProjectNotebook', () => {
   });
 
   it('clears create busy after a later note selection invalidates its result', async () => {
-    const creating = deferred<{ id: string; projectId: string; mediaType: string }>();
+    const creating = deferred<AssetSnapshot>();
     Object.defineProperty(window, 'learningCompanion', {
       configurable: true,
       value: {
@@ -117,7 +136,7 @@ describe('useProjectNotebook', () => {
     });
     const create = controller.create();
     await act(async () => { await controller.select('existing-note'); });
-    creating.resolve({ id: 'late-note', projectId: 'a', mediaType: 'text/markdown' });
+    creating.resolve(notebookAsset('a', 'late-note'));
     await act(async () => { await create; });
 
     expect(controller.creating).toBe(false);
@@ -133,9 +152,7 @@ describe('useProjectNotebook', () => {
       configurable: true,
       value: {
         getProjectNotebook: vi.fn(() => initial.promise),
-        createProjectNotebook: vi.fn(async () => ({
-          id: 'note-a', projectId: 'a', mediaType: 'text/markdown',
-        })),
+        createProjectNotebook: vi.fn(async () => notebookAsset('a', 'note-a')),
       },
     });
     let controller!: ProjectNotebookController;
