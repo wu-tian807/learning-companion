@@ -14,6 +14,8 @@ export interface ProjectNotebookAssetServiceApi {
   get(projectId: string): Promise<ProjectNotebookSnapshot>;
   create(projectId: string, name?: string): Promise<AssetSnapshot>;
   select(projectId: string, assetId: string): Promise<ProjectNotebookSnapshot>;
+  /** Once migration is recorded, legacy body writes must not create a second source of truth. */
+  isLegacyWriteRetired(projectId: string): boolean;
 }
 
 /**
@@ -43,14 +45,23 @@ export class ProjectNotebookAssetService
       }
 
       if (existing?.migrationOperationId) {
-        const asset = this.assets.get(existing.migrationOperationId);
-        if (asset?.projectId === normalizedProjectId) {
-          return this.persistCreatedAsset(
+        const reserved = this.assets.get(existing.migrationOperationId);
+        if (
+          reserved &&
+          !this.isExpectedMigrationAsset(
             normalizedProjectId,
-            asset,
-            existing.legacyRevision,
+            existing.migrationOperationId,
+            reserved,
+          )
+        ) {
+          throw new Error(
+            '笔记迁移操作已指向无关资料，已停止恢复以避免覆盖。',
           );
         }
+        // Do not trust an Asset id merely because it belongs to this Project.
+        // Re-enter the idempotent file creation path: it validates the exact
+        // generated filename, Markdown media type, managed origin and legacy
+        // bytes before accepting a partially completed migration.
         return this.createLegacyAsset(
           normalizedProjectId,
           existing.migrationOperationId,
@@ -128,6 +139,15 @@ export class ProjectNotebookAssetService
     });
   }
 
+  isLegacyWriteRetired(projectId: string): boolean {
+    const record = this.database.get(projectId);
+    return Boolean(
+      record &&
+        (record.legacyRevision !== undefined ||
+          record.migrationOperationId !== undefined),
+    );
+  }
+
   private async persistCreatedAsset(
     projectId: string,
     asset: AssetSnapshot,
@@ -188,6 +208,22 @@ export class ProjectNotebookAssetService
       throw new AppError('PROJECT_CONTEXT_CHANGED');
     }
     return normalizedProjectId;
+  }
+
+  private isExpectedMigrationAsset(
+    projectId: string,
+    operationId: string,
+    asset: AssetSnapshot,
+  ): boolean {
+    return (
+      asset.projectId === projectId &&
+      asset.id === operationId &&
+      asset.creationKind === 'generated' &&
+      asset.mediaType === 'text/markdown' &&
+      asset.contentRef.base === 'project-workspace' &&
+      asset.contentRef.path ===
+        `.learning-companion/assets/generated/note-${operationId}.md`
+    );
   }
 
   private async serialize<T>(projectId: string, task: () => Promise<T>): Promise<T> {

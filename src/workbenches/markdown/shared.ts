@@ -84,6 +84,9 @@ export type MarkdownRecoveryBootstrap = {
 
 export type MarkdownWorkbenchPayload = {
   readonly diskSource: string;
+  /** Shared in-memory document content when another viewport has unsaved edits. */
+  readonly workingBuffer?: string;
+  readonly documentDirty?: boolean;
   readonly encoding: MarkdownEncoding;
   readonly lineEnding: MarkdownLineEnding;
   readonly hasByteOrderMark: boolean;
@@ -98,12 +101,16 @@ export type MarkdownSourceBufferPayload = {
   readonly content: string;
   readonly lineEnding: MarkdownLineEnding;
   readonly sourceViewState: MarkdownSourceViewState;
+  readonly baseDocumentVersion?: number;
+  readonly updateId?: number;
 };
 
 export type MarkdownWysiwygBufferPayload = {
   readonly content: string;
   readonly lineEnding: MarkdownLineEnding;
   readonly wysiwygScrollTop: number;
+  readonly baseDocumentVersion?: number;
+  readonly updateId?: number;
 };
 
 export type MarkdownBufferSyncResult = {
@@ -515,6 +522,8 @@ export function isMarkdownWorkbenchPayload(
 
   return (
     typeof value.diskSource === 'string' &&
+    (value.workingBuffer === undefined || typeof value.workingBuffer === 'string') &&
+    (value.documentDirty === undefined || typeof value.documentDirty === 'boolean') &&
     isMarkdownEncoding(value.encoding) &&
     isMarkdownLineEnding(value.lineEnding) &&
     typeof value.hasByteOrderMark === 'boolean' &&
@@ -543,6 +552,9 @@ export function isMarkdownSourceBufferPayload(
     typeof value.content === 'string' &&
     isMarkdownLineEnding(value.lineEnding) &&
     isMarkdownSourceViewState(value.sourceViewState) &&
+    (value.baseDocumentVersion === undefined ||
+      isNonNegativeInteger(value.baseDocumentVersion)) &&
+    (value.updateId === undefined || isNonNegativeInteger(value.updateId)) &&
     value.wysiwygScrollTop === undefined
   );
 }
@@ -555,6 +567,9 @@ export function isMarkdownWysiwygBufferPayload(
     typeof value.content === 'string' &&
     isMarkdownLineEnding(value.lineEnding) &&
     isNonNegativeFiniteNumber(value.wysiwygScrollTop) &&
+    (value.baseDocumentVersion === undefined ||
+      isNonNegativeInteger(value.baseDocumentVersion)) &&
+    (value.updateId === undefined || isNonNegativeInteger(value.updateId)) &&
     value.sourceViewState === undefined
   );
 }
@@ -677,6 +692,12 @@ export function createMarkdownSyncSourceCommand(
       sourceViewState: cloneMarkdownSourceViewState(
         payload.sourceViewState,
       ),
+      ...(payload.baseDocumentVersion !== undefined
+        ? { baseDocumentVersion: payload.baseDocumentVersion }
+        : {}),
+      ...(payload.updateId !== undefined
+        ? { updateId: payload.updateId }
+        : {}),
     },
   };
 }
@@ -690,6 +711,12 @@ export function createMarkdownSyncWysiwygCommand(
       content: payload.content,
       lineEnding: payload.lineEnding,
       wysiwygScrollTop: payload.wysiwygScrollTop,
+      ...(payload.baseDocumentVersion !== undefined
+        ? { baseDocumentVersion: payload.baseDocumentVersion }
+        : {}),
+      ...(payload.updateId !== undefined
+        ? { updateId: payload.updateId }
+        : {}),
     },
   };
 }

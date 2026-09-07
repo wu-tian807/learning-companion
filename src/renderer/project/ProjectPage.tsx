@@ -30,6 +30,7 @@ import { useProjectAssets } from './use-project-assets';
 import { useProjectLayout } from './use-project-layout';
 import { useProjectSession } from './use-project-session';
 import { useRelativeTimeNow } from './use-relative-time-now';
+import { useProjectWorkbenchLocationNavigation } from './use-project-workbench-location-navigation';
 
 interface ProjectPageProps {
   readonly project: ProjectSnapshot;
@@ -220,6 +221,10 @@ export function ProjectPage({
     }
     session.selectAsset(assetId);
   }, [session]);
+  const openWorkbenchLocation = useProjectWorkbenchLocationNavigation(
+    project.id,
+    selectConversationAsset,
+  );
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     if (layout.rightPanel === 'conversation') {
@@ -499,6 +504,7 @@ export function ProjectPage({
                       : Promise.resolve()
                   }
                   onSelectAsset={session.selectAsset}
+                  onOpenWorkbenchLocation={openWorkbenchLocation}
                   onOpenSettings={onOpenSettings}
                   openAttempt={workbenchOpenAttempt}
                   onOpenStateChange={workbenchOpening.report}
@@ -531,6 +537,7 @@ export function ProjectPage({
                         : []
                     }
                     onSelectMaterialAsset={selectConversationAsset}
+                    onOpenWorkbenchLocation={openWorkbenchLocation}
                     onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                     onError={setError}
                   />

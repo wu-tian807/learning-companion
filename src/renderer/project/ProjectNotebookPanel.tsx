@@ -12,6 +12,7 @@ export function ProjectNotebookPanel({
   projectId,
   assets,
   onSelectMaterialAsset,
+  onOpenWorkbenchLocation,
   onLifecycleTaskChange,
   onError,
 }: {
@@ -20,6 +21,7 @@ export function ProjectNotebookPanel({
   readonly projectId: string;
   readonly assets: readonly AssetSnapshot[];
   readonly onSelectMaterialAsset: (assetId: string) => Promise<void> | void;
+  readonly onOpenWorkbenchLocation: (href: string) => Promise<void>;
   readonly onLifecycleTaskChange: (task: Promise<void>) => void;
   readonly onError: (message: string) => void;
 }) {
@@ -103,6 +105,7 @@ export function ProjectNotebookPanel({
                 onRefresh={() => undefined}
                 onReveal={() => Promise.resolve()}
                 onSelectAsset={onSelectMaterialAsset}
+                onOpenWorkbenchLocation={onOpenWorkbenchLocation}
                 onOpenSettings={() => undefined}
                 onLifecycleTaskChange={onLifecycleTaskChange}
                 onError={onError}

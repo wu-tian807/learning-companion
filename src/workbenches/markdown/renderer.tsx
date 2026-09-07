@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { markdown } from '@codemirror/lang-markdown';
+import { Transaction } from '@codemirror/state';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
 import CodeMirror, {
   type ReactCodeMirrorRef,
@@ -308,6 +309,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     : undefined;
   const [sourceRevision, setSourceRevision] = useState(payload?.revision ?? '');
   const documentVersionRef = useRef(payload?.documentVersion ?? 0);
+  const nextDocumentUpdateIdRef = useRef(0);
+  const pendingDocumentSyncsRef = useRef(0);
   const initialViewState =
     payload?.state ??
     ({
@@ -321,7 +324,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const wysiwygAdapterRef = useRef<MarkdownEditorAdapter | undefined>(
     undefined,
   );
-  const workingBufferRef = useRef(payload?.diskSource ?? '');
+  const workingBufferRef = useRef(
+    payload?.workingBuffer ?? payload?.diskSource ?? '',
+  );
+  const sourceInitialValueRef = useRef(
+    payload?.workingBuffer ?? payload?.diskSource ?? '',
+  );
+  const applyingRemoteSourceRef = useRef(false);
   const lineEndingRef = useRef<MarkdownLineEnding>(
     payload?.lineEnding ?? 'lf',
   );
@@ -337,7 +346,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     ((relativePath: string) => void) | undefined
   >(undefined);
   const [workingBuffer, setWorkingBuffer] = useState(
-    payload?.diskSource ?? '',
+    payload?.workingBuffer ?? payload?.diskSource ?? '',
   );
   const [diskSource, setDiskSource] = useState(
     payload?.diskSource ?? '',
@@ -359,6 +368,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const [sourceEditorKey, setSourceEditorKey] = useState(0);
   const [wysiwygEditorKey, setWysiwygEditorKey] = useState(0);
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
+  const [syncConflict, setSyncConflict] = useState<string | undefined>();
   const dirty =
     workingBuffer !== diskSource || lineEnding !== savedLineEnding;
 
@@ -373,32 +383,77 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       ) {
         return;
       }
+      if (pendingDocumentSyncsRef.current > 0) {
+        setSyncConflict(
+          '另一视口已修改此 Markdown；当前草稿已保留，请先处理冲突后再保存。',
+        );
+        return;
+      }
       const change = event.payload as Readonly<Record<string, unknown>>;
       if (
         typeof change.content !== 'string' ||
+        typeof change.diskSource !== 'string' ||
         (change.lineEnding !== 'lf' && change.lineEnding !== 'crlf') ||
+        (change.savedLineEnding !== 'lf' && change.savedLineEnding !== 'crlf') ||
         typeof change.revision !== 'string' ||
+        typeof change.dirty !== 'boolean' ||
         typeof change.documentVersion !== 'number' ||
         !Number.isSafeInteger(change.documentVersion) ||
         change.documentVersion <= documentVersionRef.current
       ) {
         return;
       }
+      // Never remount an editor for a peer update: that loses undo/IME and
+      // local cursor state. CodeMirror receives a transaction; Vditor's
+      // adapter suppresses its input callback while applying the value.
+      if (viewStateRef.current.viewMode === 'source') {
+        const editor = sourceEditorRef.current?.view;
+        if (editor && !editor.composing) {
+          applyingRemoteSourceRef.current = true;
+          const current = editor.state.doc.toString();
+          let prefix = 0;
+          while (
+            prefix < current.length &&
+            prefix < change.content.length &&
+            current[prefix] === change.content[prefix]
+          ) {
+            prefix += 1;
+          }
+          let suffix = 0;
+          while (
+            suffix < current.length - prefix &&
+            suffix < change.content.length - prefix &&
+            current[current.length - suffix - 1] ===
+              change.content[change.content.length - suffix - 1]
+          ) {
+            suffix += 1;
+          }
+          editor.dispatch({
+            changes: {
+              from: prefix,
+              to: current.length - suffix,
+              insert: change.content.slice(
+                prefix,
+                change.content.length - suffix,
+              ),
+            },
+            annotations: Transaction.addToHistory.of(false),
+          });
+          queueMicrotask(() => {
+            applyingRemoteSourceRef.current = false;
+          });
+        }
+      } else {
+        wysiwygAdapterRef.current?.setValue(change.content);
+      }
       documentVersionRef.current = change.documentVersion;
       workingBufferRef.current = change.content;
       lineEndingRef.current = change.lineEnding;
       setWorkingBuffer(change.content);
-      setDiskSource(change.content);
+      setDiskSource(change.diskSource);
       setLineEnding(change.lineEnding);
-      setSavedLineEnding(change.lineEnding);
+      setSavedLineEnding(change.savedLineEnding);
       setSourceRevision(change.revision);
-      // Recreate only the active editor. Its own selection/scroll state is
-      // deliberately not copied from the other viewport.
-      if (viewStateRef.current.viewMode === 'source') {
-        setSourceEditorKey((current) => current + 1);
-      } else {
-        setWysiwygEditorKey((current) => current + 1);
-      }
     });
   }, [subscribeEvent]);
 
@@ -573,42 +628,56 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       content: string,
       sourceViewState: MarkdownSourceViewState,
     ) => {
-      const result = await executeCommand(
-        createMarkdownSyncSourceCommand({
+      pendingDocumentSyncsRef.current += 1;
+      try {
+        const result = await executeCommand(
+          createMarkdownSyncSourceCommand({
           content,
           lineEnding: lineEndingRef.current,
           sourceViewState,
-        }),
-      );
-      const accepted = acceptSyncResult(result);
-      if (accepted.documentVersion !== undefined) {
-        documentVersionRef.current = Math.max(
-          documentVersionRef.current,
-          accepted.documentVersion,
+          baseDocumentVersion: documentVersionRef.current,
+          updateId: ++nextDocumentUpdateIdRef.current,
+          }),
         );
+        const accepted = acceptSyncResult(result);
+        if (accepted.documentVersion !== undefined) {
+          documentVersionRef.current = Math.max(
+            documentVersionRef.current,
+            accepted.documentVersion,
+          );
+        }
+        return accepted;
+      } finally {
+        pendingDocumentSyncsRef.current -= 1;
       }
-      return accepted;
     },
     [acceptSyncResult, executeCommand],
   );
 
   const syncWysiwygBuffer = useCallback(
     async (content: string, scrollTop: number) => {
-      const result = await executeCommand(
-        createMarkdownSyncWysiwygCommand({
+      pendingDocumentSyncsRef.current += 1;
+      try {
+        const result = await executeCommand(
+          createMarkdownSyncWysiwygCommand({
           content,
           lineEnding: lineEndingRef.current,
           wysiwygScrollTop: scrollTop,
-        }),
-      );
-      const accepted = acceptSyncResult(result);
-      if (accepted.documentVersion !== undefined) {
-        documentVersionRef.current = Math.max(
-          documentVersionRef.current,
-          accepted.documentVersion,
+          baseDocumentVersion: documentVersionRef.current,
+          updateId: ++nextDocumentUpdateIdRef.current,
+          }),
         );
+        const accepted = acceptSyncResult(result);
+        if (accepted.documentVersion !== undefined) {
+          documentVersionRef.current = Math.max(
+            documentVersionRef.current,
+            accepted.documentVersion,
+          );
+        }
+        return accepted;
+      } finally {
+        pendingDocumentSyncsRef.current -= 1;
       }
-      return accepted;
     },
     [acceptSyncResult, executeCommand],
   );
@@ -959,6 +1028,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         await persistViewState(next);
 
         if (mode === 'source') {
+          sourceInitialValueRef.current = workingBufferRef.current;
           setSourceEditorKey((current) => current + 1);
         } else {
           setWysiwygEditorKey((current) => current + 1);
@@ -1062,6 +1132,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
   const onSourceChange = useCallback(
     (value: string, update: ViewUpdate) => {
+      if (applyingRemoteSourceRef.current) {
+        return;
+      }
       const sourceState = sourceViewStateFromUpdate(update);
       workingBufferRef.current = value;
       setWorkingBuffer(value);
@@ -1160,6 +1233,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       await persistViewState(nextViewState);
       setRecovery(undefined);
       if (mode === 'source') {
+        sourceInitialValueRef.current = workingBufferRef.current;
         setSourceEditorKey((current) => current + 1);
       } else {
         setWysiwygEditorKey((current) => current + 1);
@@ -1245,6 +1319,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         setLineEnding(result.payload.lineEnding);
         setSavedLineEnding(result.payload.lineEnding);
         if (viewStateRef.current.viewMode === 'source') {
+          sourceInitialValueRef.current = workingBufferRef.current;
           setSourceEditorKey((current) => current + 1);
         } else {
           setWysiwygEditorKey((current) => current + 1);
@@ -1702,6 +1777,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         </div>
       </div>
 
+      {syncConflict ? (
+        <div role="alert" className="border-b border-amber-300/20 bg-amber-100/10 px-3 py-1 text-xs text-amber-100">
+          {syncConflict}
+        </div>
+      ) : null}
+
       <div className="relative min-h-0 flex-1">
         {viewState.viewMode === 'source' ? (
           <div className="relative h-full min-h-0 overflow-hidden">
@@ -1709,7 +1790,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
               key={sourceEditorKey}
               ref={sourceEditorRef}
               aria-label="Markdown 源码编辑器"
-              value={workingBuffer}
+              value={sourceInitialValueRef.current}
               height="100%"
               theme="none"
               extensions={configuredSourceExtensions}

@@ -139,7 +139,9 @@ describe('ProjectNotebookAssetService', () => {
       legacyRevision: 1,
     });
     expect(fixture.assets.size).toBe(1);
-    expect(fixture.createMarkdownNote).toHaveBeenCalledOnce();
+    // Restart recovery re-enters the idempotent creation path so the
+    // persisted operation's managed file and legacy bytes are validated.
+    expect(fixture.createMarkdownNote).toHaveBeenCalledTimes(2);
   });
 
   it('serializes concurrent first reads into one legacy migration', async () => {

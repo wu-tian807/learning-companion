@@ -587,6 +587,31 @@ export class AssetService implements AssetServiceApi {
             '笔记迁移操作已指向另一份资料，已停止恢复以避免覆盖。',
           );
         }
+        if (input.assetId && !generated.created) {
+          const existingResolved = await this.resolverRegistry.resolve(
+            existing.contentRef,
+            context,
+          );
+          try {
+            const persisted = await existingResolved.handle?.readBytes?.();
+            const matchesExpectedBody =
+              persisted !== undefined &&
+              persisted.content.byteLength === input.content.byteLength &&
+              persisted.content.every(
+                (byte, index) => byte === input.content[index],
+              );
+            if (
+              existing.contentRef.base !== PROJECT_WORKSPACE_CONTENT_BASE ||
+              !matchesExpectedBody
+            ) {
+              throw new Error(
+                '笔记迁移文件与待恢复内容不一致，已停止恢复以避免覆盖。',
+              );
+            }
+          } finally {
+            await existingResolved.handle?.close();
+          }
+        }
 
         return Object.freeze({
           asset: cloneAssetSnapshot(existing),

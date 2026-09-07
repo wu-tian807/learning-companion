@@ -86,6 +86,25 @@ describe('Project learning note IPC handlers', () => {
     expect(save).not.toHaveBeenCalled();
   });
 
+  it('rejects legacy writes after the notebook Asset migration while keeping reads compatible', async () => {
+    const { get, save, service } = createService();
+    registerProjectLearningNoteHandlers(service, {
+      isLegacyWriteRetired: (projectId) => projectId === 'project-1',
+    });
+    await findHandler(IPC_CHANNELS.getProjectLearningNote)({
+      projectId: 'project-1',
+    });
+    await expect(
+      findHandler(IPC_CHANNELS.saveProjectLearningNote)({
+        projectId: 'project-1',
+        markdown: '# stale body',
+        expectedRevision: 1,
+      }),
+    ).rejects.toMatchObject({ code: 'FEATURE_NOT_SUPPORTED' });
+    expect(get).toHaveBeenCalledOnce();
+    expect(save).not.toHaveBeenCalled();
+  });
+
   it('removes every registered channel', () => {
     removeProjectLearningNoteHandlers();
     expect(electronMocks.removeHandler.mock.calls.map(([channel]) => channel)).toEqual([

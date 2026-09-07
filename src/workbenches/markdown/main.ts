@@ -78,7 +78,7 @@ interface MarkdownSessionRuntime {
  */
 interface MarkdownDocumentRuntime {
   readonly assetId: string;
-  readonly handle: MarkdownSessionRuntime['handle'];
+  handle: MarkdownSessionRuntime['handle'];
   source: ResolvedTextContent;
   workingBuffer: string;
   currentLineEnding: MarkdownLineEnding;
@@ -90,6 +90,7 @@ interface MarkdownDocumentRuntime {
   lastWriterSessionId: string | undefined;
   lastWriterUpdateId: number;
   readonly sessionIds: Set<string>;
+  writeTask: Promise<void>;
 }
 
 export interface MarkdownImageFileSystemApi {
@@ -149,6 +150,14 @@ export class MarkdownWorkbenchProvider
   readonly manifest = markdownWorkbenchManifest;
   private readonly sessions = new Map<string, MarkdownSessionRuntime>();
   private readonly documents = new Map<string, MarkdownDocumentRuntime>();
+  private readonly openingDocuments = new Map<
+    string,
+    Promise<{
+      readonly document: MarkdownDocumentRuntime;
+      readonly recoveryContent: string | undefined;
+      readonly state?: MarkdownWorkbenchStateV1;
+    }>
+  >();
   private readonly now: () => number;
   private readonly textContentAdapter: TextContentAdapter;
   private readonly recoveryDebounceMs: number;
@@ -190,10 +199,11 @@ export class MarkdownWorkbenchProvider
     }
 
     let state = this.readState(context.state);
-    const existingDocument = this.documents.get(context.asset.id);
-    const opened = existingDocument
-      ? { document: existingDocument, recoveryContent: undefined }
-      : await this.openDocument(context.asset.id, handle, state);
+    const opened = await this.getOrOpenDocument(
+      context.asset.id,
+      handle,
+      state,
+    );
     const document = opened.document;
     const recoveryContent = opened.recoveryContent;
     state = opened.state ?? state;
@@ -217,10 +227,17 @@ export class MarkdownWorkbenchProvider
     return {
       payload: {
         diskSource: document.source.content,
+        ...(this.isDirty(document)
+          ? {
+              workingBuffer: document.workingBuffer,
+              documentDirty: true,
+            }
+          : {}),
         encoding: document.source.encoding,
         lineEnding: document.source.lineEnding,
         hasByteOrderMark: document.source.hasByteOrderMark,
         revision: document.source.revision,
+        documentVersion: document.documentVersion,
         state: viewState,
         ...(document.recovery && recoveryContent !== undefined
           ? {
@@ -257,7 +274,14 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        this.acceptDocumentBuffer(runtime, command.payload.content, command.payload.lineEnding, 'source');
+        this.acceptDocumentBuffer(
+          runtime,
+          command.payload.content,
+          command.payload.lineEnding,
+          'source',
+          command.payload.baseDocumentVersion,
+          command.payload.updateId,
+        );
         runtime.viewState = {
           ...runtime.viewState,
           viewMode: 'source',
@@ -271,7 +295,14 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        this.acceptDocumentBuffer(runtime, command.payload.content, command.payload.lineEnding, 'wysiwyg');
+        this.acceptDocumentBuffer(
+          runtime,
+          command.payload.content,
+          command.payload.lineEnding,
+          'wysiwyg',
+          command.payload.baseDocumentVersion,
+          command.payload.updateId,
+        );
         runtime.viewState = {
           ...runtime.viewState,
           viewMode: 'wysiwyg',
@@ -417,6 +448,14 @@ export class MarkdownWorkbenchProvider
     try {
       const document = runtime.document;
       document.sessionIds.delete(context.sessionId);
+      if (document.handle === runtime.handle) {
+        const replacementId = document.sessionIds.values().next()
+          .value as string | undefined;
+        const replacement = replacementId
+          ? this.sessions.get(replacementId)
+          : undefined;
+        if (replacement) document.handle = replacement.handle;
+      }
       if (document.sessionIds.size === 0 && this.isDirty(document)) {
         this.cancelScheduledRecovery(document);
         await this.waitForRecovery(document);
@@ -498,9 +537,37 @@ export class MarkdownWorkbenchProvider
       lastWriterSessionId: undefined,
       lastWriterUpdateId: 0,
       sessionIds: new Set(),
+      writeTask: Promise.resolve(),
     };
     this.documents.set(assetId, document);
     return { document, recoveryContent, state };
+  }
+
+  private getOrOpenDocument(
+    assetId: string,
+    handle: MarkdownSessionRuntime['handle'],
+    state: MarkdownWorkbenchStateV1,
+  ): Promise<{
+    readonly document: MarkdownDocumentRuntime;
+    readonly recoveryContent: string | undefined;
+    readonly state?: MarkdownWorkbenchStateV1;
+  }> {
+    const existing = this.documents.get(assetId);
+    if (existing) {
+      return Promise.resolve({
+        document: existing,
+        recoveryContent: undefined,
+      });
+    }
+    const opening = this.openingDocuments.get(assetId);
+    if (opening) return opening;
+    const task = this.openDocument(assetId, handle, state).finally(() => {
+      if (this.openingDocuments.get(assetId) === task) {
+        this.openingDocuments.delete(assetId);
+      }
+    });
+    this.openingDocuments.set(assetId, task);
+    return task;
   }
 
   private acceptDocumentBuffer(
@@ -508,11 +575,29 @@ export class MarkdownWorkbenchProvider
     content: string,
     lineEnding: MarkdownLineEnding,
     editedFrom: MarkdownEditMode,
+    baseDocumentVersion: number | undefined,
+    updateId: number | undefined,
   ): void {
     const document = runtime.document;
+    // New renderers identify every optimistic edit. A late writer may append
+    // only to its own immediately preceding version; otherwise it must retain
+    // a conflict draft instead of replacing another viewport's full buffer.
+    if (
+      updateId !== undefined &&
+      updateId > 0 &&
+      baseDocumentVersion !== document.documentVersion &&
+      !(
+        document.lastWriterSessionId === runtime.sessionId &&
+        updateId > document.lastWriterUpdateId
+      )
+    ) {
+      throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
+    }
     document.workingBuffer = content;
     document.currentLineEnding = lineEnding;
     document.lastEditMode = editedFrom;
+    document.lastWriterSessionId = runtime.sessionId;
+    document.lastWriterUpdateId = updateId ?? 0;
     document.documentVersion += 1;
     this.publishDocumentChange(document, runtime.sessionId);
   }
@@ -529,8 +614,11 @@ export class MarkdownWorkbenchProvider
         type: 'markdown:document-changed',
         payload: {
           content: document.workingBuffer,
+          diskSource: document.source.content,
           lineEnding: document.currentLineEnding,
+          savedLineEnding: document.source.lineEnding,
           revision: document.source.revision,
+          dirty: this.isDirty(document),
           documentVersion: document.documentVersion,
           ...(originSessionId ? { originSessionId } : {}),
         },
@@ -843,6 +931,23 @@ export class MarkdownWorkbenchProvider
     document: MarkdownDocumentRuntime,
     viewState: MarkdownWorkbenchViewState,
   ): Promise<WriteTextContentResult> {
+    // Saves share one queue per Asset. Two viewport shortcuts therefore
+    // coalesce into one physical write; the follower observes the committed
+    // source rather than racing the same expectedRevision.
+    const task = document.writeTask
+      .catch(() => undefined)
+      .then(() => this.saveSourceNow(document, viewState));
+    document.writeTask = task.then(
+      () => undefined,
+      () => undefined,
+    );
+    return task;
+  }
+
+  private async saveSourceNow(
+    document: MarkdownDocumentRuntime,
+    viewState: MarkdownWorkbenchViewState,
+  ): Promise<WriteTextContentResult> {
     if (!this.isDirty(document)) {
       document.recovery = undefined;
       await this.clearRecovery(document.assetId, viewState);
@@ -869,6 +974,10 @@ export class MarkdownWorkbenchProvider
       lineEnding: submittedLineEnding,
       revision: result.revision,
     };
+    // A disk commit is a distinct observable document transition. Peers need
+    // it even when the text did not change, otherwise they retain a dirty
+    // baseline and discard the event by version.
+    document.documentVersion += 1;
     if (this.isDirty(document)) {
       // New input landed during the write.  It remains dirty relative to the
       // committed snapshot and must survive close/restart.

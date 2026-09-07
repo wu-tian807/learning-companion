@@ -105,6 +105,7 @@ export interface ApplicationIpcRegistrations {
   readonly removeProjectConversations: () => void;
   readonly registerProjectLearningNotes: (
     service: ProjectLearningNoteServiceApi,
+    notebooks?: Pick<ProjectNotebookAssetServiceApi, 'isLegacyWriteRetired'>,
   ) => void;
   readonly removeProjectLearningNotes: () => void;
   readonly registerProjectNotebookAssets: (
@@ -227,6 +228,7 @@ export function registerApplicationIpc(
       () =>
         registrations.registerProjectLearningNotes(
           services.projectLearningNoteService,
+          services.projectNotebookAssetService,
         ),
       registrations.removeProjectLearningNotes,
     );
