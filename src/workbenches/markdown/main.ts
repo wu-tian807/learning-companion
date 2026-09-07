@@ -587,6 +587,8 @@ export class MarkdownWorkbenchProvider
       updateId > 0 &&
       baseDocumentVersion !== document.documentVersion &&
       !(
+        baseDocumentVersion !== undefined &&
+        baseDocumentVersion < document.documentVersion &&
         document.lastWriterSessionId === runtime.sessionId &&
         updateId > document.lastWriterUpdateId
       )
@@ -837,6 +839,7 @@ export class MarkdownWorkbenchProvider
     return createResult({
       accepted: true,
       dirty: this.isDirty(runtime.document),
+      documentVersion: runtime.document.documentVersion,
     });
   }
 

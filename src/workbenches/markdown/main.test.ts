@@ -185,6 +185,7 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(synced.payload).toEqual({
       accepted: true,
       dirty: true,
+      documentVersion: 1,
     });
     const saved = await provider.command(context, {
       type: markdownCommands.save,
@@ -283,6 +284,28 @@ describe('MarkdownWorkbenchProvider', () => {
     ).rejects.toMatchObject({ code: 'CONTENT_HAS_UNSAVED_CHANGES' });
     const reopened = await provider.open(createContext('third', handle));
     expect(reopened.payload).toMatchObject({ workingBuffer: '# first\n' });
+  });
+
+  it('rejects a writer that claims a future document version', async () => {
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
+    );
+    const { handle } = createHandle(source);
+    const context = createContext('session', handle);
+    await provider.open(context);
+    await expect(
+      provider.command(
+        context,
+        createMarkdownSyncSourceCommand({
+          content: '# impossible future\n',
+          lineEnding: 'lf',
+          sourceViewState,
+          baseDocumentVersion: 999,
+          updateId: 1,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'CONTENT_HAS_UNSAVED_CHANGES' });
   });
 
   it('serializes simultaneous saves from two Markdown sessions into one write', async () => {
@@ -403,6 +426,7 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(synced.payload).toEqual({
       accepted: true,
       dirty: true,
+      documentVersion: 1,
     });
     const saved = await provider.command(context, {
       type: markdownCommands.save,
@@ -444,6 +468,7 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(sourceSync.payload).toEqual({
       accepted: true,
       dirty: true,
+      documentVersion: 2,
     });
     await expect(
       provider.command(context, { type: markdownCommands.save }),
