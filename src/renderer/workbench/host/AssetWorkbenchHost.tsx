@@ -32,6 +32,8 @@ import { useWorkbenchRuntime } from '../runtime/workbench-runtime-context';
 
 interface AssetWorkbenchHostProps {
   readonly projectId: string;
+  /** Stable identity for this visual Workbench instance. */
+  readonly viewportId?: string;
   readonly asset: AssetSnapshot | undefined;
   readonly mediaLabel: (mediaType: string) => string;
   readonly onRelink: () => void;
@@ -68,6 +70,7 @@ registerRendererWorkbenches(defaultRegistry);
 
 export function AssetWorkbenchHost({
   projectId,
+  viewportId = 'primary-material',
   asset,
   mediaLabel,
   onRelink,
@@ -245,6 +248,7 @@ export function AssetWorkbenchHost({
       try {
         const bootstrap = await window.learningCompanion.openWorkbench({
           assetId,
+          viewportId,
         });
 
         if (!isWorkbenchBootstrap(bootstrap)) {
@@ -351,6 +355,7 @@ export function AssetWorkbenchHost({
     openAttempt,
     projectId,
     runtime,
+    viewportId,
   ]);
 
   const state =

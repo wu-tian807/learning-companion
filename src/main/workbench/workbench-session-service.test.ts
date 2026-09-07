@@ -115,6 +115,7 @@ function createManager(
   fallback: MainWorkbenchProvider,
   provider?: MainWorkbenchProvider,
   transportBindingRegistry?: WorkbenchTransportBindingRegistryApi,
+  createId: () => string = () => 'session',
 ) {
   const registry = new WorkbenchRegistry(fallback);
 
@@ -132,7 +133,7 @@ function createManager(
       get: vi.fn(async () => undefined),
     } as unknown as WorkbenchStateDatabaseApi,
     {
-      createId: () => 'session',
+      createId,
       ...(transportBindingRegistry
         ? { transportBindingRegistry }
         : {}),
@@ -141,6 +142,56 @@ function createManager(
 }
 
 describe('WorkbenchSessionService', () => {
+  it('isolates opens, commands and close operations by viewport', async () => {
+    const fallback = createProvider('fallback', ['*/*']);
+    const plainText = createProvider('plain-text', ['text/plain'], [
+      'read-bytes',
+    ]);
+    const { handles, service } = createAssetService();
+    let nextId = 0;
+    const manager = createManager(
+      service,
+      fallback,
+      plainText,
+      undefined,
+      () => `session-${++nextId}`,
+    );
+
+    const [material, notebook] = await Promise.all([
+      manager.open('asset', 'material'),
+      manager.open('asset', 'notebook'),
+    ]);
+
+    expect(material).toMatchObject({
+      sessionId: 'session-1',
+      viewportId: 'material',
+    });
+    expect(notebook).toMatchObject({
+      sessionId: 'session-2',
+      viewportId: 'notebook',
+    });
+    await expect(
+      manager.command(material.sessionId, { type: 'material-command' }),
+    ).resolves.toEqual({ payload: { command: 'material-command' } });
+    await expect(
+      manager.command(notebook.sessionId, { type: 'notebook-command' }),
+    ).resolves.toEqual({ payload: { command: 'notebook-command' } });
+
+    await manager.close(material.sessionId);
+    await expect(
+      manager.command(material.sessionId, { type: 'stale' }),
+    ).rejects.toThrow('WORKBENCH_SESSION_EXPIRED');
+    await expect(
+      manager.command(notebook.sessionId, { type: 'still-open' }),
+    ).resolves.toEqual({ payload: { command: 'still-open' } });
+    expect(handles).toHaveLength(2);
+    expect(handles[0]?.close).toHaveBeenCalledOnce();
+    expect(handles[1]?.close).not.toHaveBeenCalled();
+
+    await manager.closeActive();
+    expect(handles[1]?.close).toHaveBeenCalledOnce();
+  });
+
   it('opens a matched provider, forwards commands and closes resources', async () => {
     const fallback = createProvider('fallback', ['*/*']);
     const plainText = createProvider(
