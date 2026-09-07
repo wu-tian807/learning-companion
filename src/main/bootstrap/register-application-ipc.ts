@@ -50,11 +50,6 @@ import {
   registerProjectConversationHandlers,
   removeProjectConversationHandlers,
 } from '../ipc/project-conversations';
-import type { ProjectLearningNoteServiceApi } from '../project-learning-notes/project-learning-note-service';
-import {
-  registerProjectLearningNoteHandlers,
-  removeProjectLearningNoteHandlers,
-} from '../ipc/project-learning-notes';
 import type { ProjectNotebookAssetServiceApi } from '../project-notebook-assets/project-notebook-asset-service';
 import {
   registerProjectNotebookAssetHandlers,
@@ -74,7 +69,6 @@ export interface ApplicationIpcServices {
   readonly generationTaskService: GenerationTaskServiceApi;
   readonly projectService: ProjectServiceApi;
   readonly projectConversationService: ProjectConversationServiceApi;
-  readonly projectLearningNoteService: ProjectLearningNoteServiceApi;
   readonly projectNotebookAssetService: ProjectNotebookAssetServiceApi;
   readonly settingsRepository: SettingsRepository;
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
@@ -103,11 +97,6 @@ export interface ApplicationIpcRegistrations {
     service: ProjectConversationServiceApi,
   ) => void;
   readonly removeProjectConversations: () => void;
-  readonly registerProjectLearningNotes: (
-    service: ProjectLearningNoteServiceApi,
-    notebooks?: Pick<ProjectNotebookAssetServiceApi, 'isLegacyWriteRetired'>,
-  ) => void;
-  readonly removeProjectLearningNotes: () => void;
   readonly registerProjectNotebookAssets: (
     service: ProjectNotebookAssetServiceApi,
   ) => void;
@@ -145,8 +134,6 @@ const defaultRegistrations: ApplicationIpcRegistrations = {
   removeProjects: removeProjectHandlers,
   registerProjectConversations: registerProjectConversationHandlers,
   removeProjectConversations: removeProjectConversationHandlers,
-  registerProjectLearningNotes: registerProjectLearningNoteHandlers,
-  removeProjectLearningNotes: removeProjectLearningNoteHandlers,
   registerProjectNotebookAssets: registerProjectNotebookAssetHandlers,
   removeProjectNotebookAssets: removeProjectNotebookAssetHandlers,
   registerAssets: registerAssetHandlers,
@@ -223,14 +210,6 @@ export function registerApplicationIpc(
           services.projectConversationService,
         ),
       registrations.removeProjectConversations,
-    );
-    register(
-      () =>
-        registrations.registerProjectLearningNotes(
-          services.projectLearningNoteService,
-          services.projectNotebookAssetService,
-        ),
-      registrations.removeProjectLearningNotes,
     );
     register(
       () =>

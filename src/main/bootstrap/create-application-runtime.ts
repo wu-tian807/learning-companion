@@ -29,8 +29,6 @@ import { ContentResourceService } from '../content/content-resource-service';
 import { WorkbenchConversationContextProviderRegistry } from '../conversation/workbench-conversation-context-provider-registry';
 import { ProjectConversationDatabase } from '../conversation/project-conversation-database';
 import { ProjectConversationService } from '../conversation/project-conversation-service';
-import { ProjectLearningNoteDatabase } from '../project-learning-notes/project-learning-note-database';
-import { ProjectLearningNoteService } from '../project-learning-notes/project-learning-note-service';
 import { ProjectNotebookAssetDatabase } from '../project-notebook-assets/project-notebook-asset-database';
 import { ProjectNotebookAssetService } from '../project-notebook-assets/project-notebook-asset-service';
 import {
@@ -159,10 +157,6 @@ export async function createApplicationRuntime({
       projectDatabase,
       assetDatabase,
     );
-    const projectLearningNoteService = new ProjectLearningNoteService(
-      new ProjectLearningNoteDatabase(databaseContext),
-      projectDatabase,
-    );
     const agentSessionService = new AgentSessionService(projectDatabase);
     const agentFunctionTools = new AgentFunctionToolRegistry();
     const agentCapabilityPaths = createAgentCapabilityPaths(documentsPath);
@@ -238,7 +232,6 @@ export async function createApplicationRuntime({
     );
     const projectNotebookAssetService = new ProjectNotebookAssetService(
       new ProjectNotebookAssetDatabase(databaseContext),
-      projectLearningNoteService,
       assetService,
       projectDatabase,
     );
@@ -370,7 +363,6 @@ export async function createApplicationRuntime({
       generationTaskService,
       projectService,
       projectConversationService,
-      projectLearningNoteService,
       projectNotebookAssetService,
       workbenchActions,
       settingsRepository,

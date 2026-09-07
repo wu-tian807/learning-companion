@@ -2,10 +2,6 @@ export interface ProjectNotebookSnapshot {
   readonly projectId: string;
   /** Undefined means the restricted notebook viewport is in its empty state. */
   readonly assetId?: string;
-  /** The old project_learning_notes body has been copied into this Asset. */
-  readonly legacyRevision?: number;
-  /** Internal recovery identity; never stored in Markdown or conversation data. */
-  readonly migrationOperationId?: string;
 }
 
 export interface ProjectNotebookProjectRequest {

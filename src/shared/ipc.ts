@@ -63,11 +63,6 @@ import type {
   SaveProjectConversationRequest,
 } from "./project-conversations";
 import type {
-  ProjectLearningNoteProjectRequest,
-  ProjectLearningNoteSnapshot,
-  SaveProjectLearningNoteRequest,
-} from './project-learning-notes';
-import type {
   CreateProjectNotebookRequest,
   ProjectNotebookProjectRequest,
   ProjectNotebookSnapshot,
@@ -117,8 +112,6 @@ export const IPC_CHANNELS = {
   rebuildBoundProjectConversation: "project-conversation:rebuild-bound",
   saveProjectConversation: "project-conversation:save",
   deleteProjectConversation: "project-conversation:delete",
-  getProjectLearningNote: 'project-learning-note:get',
-  saveProjectLearningNote: 'project-learning-note:save',
   getProjectNotebook: 'project-notebook:get',
   createProjectNotebook: 'project-notebook:create',
   selectProjectNotebookAsset: 'project-notebook:select-asset',
@@ -252,12 +245,6 @@ export interface LearningCompanionApi {
   deleteProjectConversation: (
     request: DeleteProjectConversationRequest,
   ) => Promise<ConversationRecord[]>;
-  getProjectLearningNote: (
-    request: ProjectLearningNoteProjectRequest,
-  ) => Promise<ProjectLearningNoteSnapshot>;
-  saveProjectLearningNote: (
-    request: SaveProjectLearningNoteRequest,
-  ) => Promise<ProjectLearningNoteSnapshot>;
   getProjectNotebook: (
     request: ProjectNotebookProjectRequest,
   ) => Promise<ProjectNotebookSnapshot>;

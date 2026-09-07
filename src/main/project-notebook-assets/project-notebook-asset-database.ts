@@ -12,8 +12,6 @@ export interface ProjectNotebookAssetDatabaseApi {
   save(
     projectId: string,
     assetId: string | undefined,
-    legacyRevision: number | undefined,
-    migrationOperationId: string | undefined,
     updatedTime: number,
   ): ProjectNotebookSnapshot;
 }
@@ -24,12 +22,6 @@ function fromRow(
   return cloneProjectNotebookSnapshot({
     projectId: row.projectId,
     ...(row.assetId ? { assetId: row.assetId } : {}),
-    ...(row.legacyRevision === null
-      ? {}
-      : { legacyRevision: row.legacyRevision }),
-    ...(row.migrationOperationId
-      ? { migrationOperationId: row.migrationOperationId }
-      : {}),
   });
 }
 
@@ -50,8 +42,6 @@ export class ProjectNotebookAssetDatabase
   save(
     projectId: string,
     assetId: string | undefined,
-    legacyRevision: number | undefined,
-    migrationOperationId: string | undefined,
     updatedTime: number,
   ): ProjectNotebookSnapshot {
     return this.context.sqlite.transaction(() => {
@@ -63,8 +53,6 @@ export class ProjectNotebookAssetDatabase
       const next = {
         projectId,
         assetId: assetId ?? null,
-        legacyRevision: legacyRevision ?? null,
-        migrationOperationId: migrationOperationId ?? null,
         updatedTime: Math.max(updatedTime, (existing?.updatedTime ?? -1) + 1),
       };
       if (existing) {
@@ -74,9 +62,18 @@ export class ProjectNotebookAssetDatabase
           .where(eq(projectNotebookAssets.projectId, projectId))
           .run();
       } else {
-        this.context.db.insert(projectNotebookAssets).values(next).run();
+        // The historic nullable columns remain part of the old table schema;
+        // new notebook relations deliberately leave them unused.
+        this.context.db.insert(projectNotebookAssets).values({
+          ...next,
+          legacyRevision: null,
+          migrationOperationId: null,
+        }).run();
       }
-      return fromRow(next);
+      return cloneProjectNotebookSnapshot({
+        projectId: next.projectId,
+        ...(next.assetId ? { assetId: next.assetId } : {}),
+      });
     })();
   }
 }
