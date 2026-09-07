@@ -266,6 +266,7 @@ export function HtmlWorkbenchView({
           return true;
         },
       },
+      bootstrap.viewportId,
     );
   }, [asset.id, conversationOwnerId, frameKey, loadedFrameKey, payload?.sourceRevision, showHighlight]);
 

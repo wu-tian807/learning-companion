@@ -45,6 +45,7 @@ export function useProjectWorkbenchLocationNavigation(
           signal: controller.signal,
           timeoutMs: 10_000,
           emphasize: true,
+          viewportId: 'primary-material',
         });
       } finally {
         if (currentRef.current === controller) {

@@ -1655,6 +1655,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           return false;
         },
       },
+      bootstrap.viewportId,
     );
   }, [
     asset.id,

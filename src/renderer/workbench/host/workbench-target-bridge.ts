@@ -36,6 +36,7 @@ interface Registration {
   readonly token: symbol;
   readonly assetId: string;
   readonly controller: WorkbenchTargetController;
+  readonly viewportId?: string;
 }
 
 const listeners = new Set<() => void>();
@@ -58,6 +59,7 @@ export function registerWorkbenchTargetController(
   ownerId: string,
   assetId: string,
   controller: WorkbenchTargetController,
+  viewportId?: string,
 ): () => void {
   const normalizedOwnerId = ownerId.trim();
   const normalizedAssetId = assetId.trim();
@@ -65,7 +67,12 @@ export function registerWorkbenchTargetController(
     throw new Error('Workbench Target controller 无效');
   }
   const token = Symbol(normalizedOwnerId);
-  const registration = { token, assetId: normalizedAssetId, controller };
+  const registration = {
+    token,
+    assetId: normalizedAssetId,
+    controller,
+    ...(viewportId?.trim() ? { viewportId: viewportId.trim() } : {}),
+  };
   const registrations = registrationsByAsset.get(normalizedAssetId) ?? new Map();
   registrations.set(normalizedOwnerId, registration);
   registrationsByAsset.set(normalizedAssetId, registrations);
@@ -94,13 +101,18 @@ export function registerWorkbenchTargetController(
 function currentRegistration(
   assetId: string,
   ownerId?: string,
+  viewportId?: string,
 ): Registration | undefined {
   const normalizedAssetId = assetId.trim();
   const normalizedOwnerId = ownerId?.trim();
   const registrations = registrationsByAsset.get(normalizedAssetId);
   const registration = normalizedOwnerId
     ? registrations?.get(normalizedOwnerId)
-    : registrations?.get(latestOwnerByAsset.get(normalizedAssetId) ?? '');
+    : viewportId
+      ? [...(registrations?.values() ?? [])]
+          .reverse()
+          .find((candidate) => candidate.viewportId === viewportId)
+      : registrations?.get(latestOwnerByAsset.get(normalizedAssetId) ?? '');
   return registration;
 }
 
@@ -116,13 +128,17 @@ function throwIfCancelled(
   expectedRegistration: Registration,
   assetId: string,
   ownerId: string | undefined,
+  viewportId?: string,
 ): void {
   if (signal?.aborted) {
     throw signal.reason instanceof Error
       ? signal.reason
       : new DOMException('引用定位已取消。', 'AbortError');
   }
-  if (currentRegistration(assetId, ownerId)?.token !== expectedRegistration.token) {
+  if (
+    currentRegistration(assetId, ownerId, viewportId)?.token !==
+    expectedRegistration.token
+  ) {
     throw new DOMException('目标资料视口已关闭或被替换。', 'AbortError');
   }
 }
@@ -149,13 +165,14 @@ export async function revealWorkbenchTarget(
   emphasize = false,
   ownerId?: string,
   signal?: AbortSignal,
+  viewportId?: string,
 ): Promise<void> {
-  const registration = currentRegistration(assetId, ownerId);
+  const registration = currentRegistration(assetId, ownerId, viewportId);
   const controller = registration?.controller;
   if (!registration || !controller) {
     throw new Error('目标资料尚未准备好，无法定位原文。');
   }
-  throwIfCancelled(signal, registration, assetId, ownerId);
+  throwIfCancelled(signal, registration, assetId, ownerId, viewportId);
   // Selecting the Asset already reveals an asset-scoped Target. It has no
   // content position whose revision could become stale.
   if (target.scope === 'asset') return;
@@ -171,11 +188,11 @@ export async function revealWorkbenchTarget(
   if (revealResult === false) {
     throw new Error('原文内容可能已经变化，无法定位该引用。');
   }
-  throwIfCancelled(signal, registration, assetId, ownerId);
+  throwIfCancelled(signal, registration, assetId, ownerId, viewportId);
   if (emphasize) {
     if (signal) await controller.emphasize?.(target, { signal });
     else await controller.emphasize?.(target);
-    throwIfCancelled(signal, registration, assetId, ownerId);
+    throwIfCancelled(signal, registration, assetId, ownerId, viewportId);
   }
 }
 
@@ -184,9 +201,10 @@ export function waitForWorkbenchTargetController(
   signal: AbortSignal,
   timeoutMs = 10_000,
   ownerId?: string,
+  viewportId?: string,
 ): Promise<void> {
   if (signal.aborted) return Promise.reject(signal.reason);
-  if (current(assetId, ownerId)) return Promise.resolve();
+  if (currentRegistration(assetId, ownerId, viewportId)) return Promise.resolve();
   return new Promise((resolve, reject) => {
     let settled = false;
     const finish = (error?: Error) => {
@@ -199,7 +217,7 @@ export function waitForWorkbenchTargetController(
       else resolve();
     };
     const check = () => {
-      if (current(assetId, ownerId)) finish();
+      if (currentRegistration(assetId, ownerId, viewportId)) finish();
     };
     const abort = () => finish(
       signal.reason instanceof Error
@@ -225,6 +243,7 @@ export async function selectAndRevealWorkbenchTarget({
   timeoutMs,
   emphasize,
   ownerId,
+  viewportId,
 }: {
   readonly assetId: string;
   readonly target: AssetTarget;
@@ -235,12 +254,19 @@ export async function selectAndRevealWorkbenchTarget({
   readonly emphasize?: boolean;
   /** Source visual Workbench registration. Required by new multi-viewport callers. */
   readonly ownerId?: string;
+  readonly viewportId?: string;
 }): Promise<void> {
   if (signal.aborted) throw signal.reason;
   await selectAsset(assetId);
   if (signal.aborted) throw signal.reason;
   if (target.scope === 'asset') return;
-  await waitForWorkbenchTargetController(assetId, signal, timeoutMs, ownerId);
+  await waitForWorkbenchTargetController(
+    assetId,
+    signal,
+    timeoutMs,
+    ownerId,
+    viewportId,
+  );
   if (signal.aborted) throw signal.reason;
   await revealWorkbenchTarget(
     assetId,
@@ -249,6 +275,7 @@ export async function selectAndRevealWorkbenchTarget({
     emphasize,
     ownerId,
     signal,
+    viewportId,
   );
 }
 
