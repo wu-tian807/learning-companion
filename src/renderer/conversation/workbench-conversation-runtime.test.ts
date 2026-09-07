@@ -160,6 +160,51 @@ describe('WorkbenchConversationRuntime', () => {
     expect(runtime.resolveContribution(source('pdf', 'asset-pdf'))).toBeUndefined();
   });
 
+  it('does not cancel a material launch when the unrelated last-mounted notebook closes', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('material.viewport', 'pdf', contribution('pdf'));
+    const closeNotebook = runtime.register(
+      'notebook.viewport',
+      'note',
+      contribution('markdown'),
+    );
+    const pending = runtime.openAndWait({
+      ownerId: 'material.viewport',
+      context: { captured: 'source selection' },
+    });
+    const request = runtime.getSnapshot().launchRequest!;
+
+    closeNotebook();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    runtime.settleLaunchRequest(request.id);
+
+    await expect(pending).resolves.toBeUndefined();
+    expect(runtime.getSnapshot().launchRequest).toBe(request);
+    expect(runtime.getSnapshot().launchRequest?.contextSource?.assetId).toBe('pdf');
+  });
+
+  it('retains a consumed request owner without letting notebook replacement clear it', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('material.viewport', 'pdf', contribution('pdf'));
+    const closeNotebook = runtime.register(
+      'notebook.viewport',
+      'note',
+      contribution('markdown'),
+    );
+    runtime.open({
+      ownerId: 'material.viewport',
+      context: { captured: 'immutable source' },
+    });
+    const request = runtime.getSnapshot().launchRequest!;
+    runtime.consumeLaunchRequest(request.id);
+    closeNotebook();
+    await new Promise<void>((resolve) => queueMicrotask(resolve));
+    runtime.register('notebook.viewport', 'new-note', contribution('markdown'));
+
+    expect(runtime.getSnapshot().launchRequest).toBeUndefined();
+    expect(runtime.resolveContribution(source('pdf', 'pdf'))).toBeDefined();
+  });
+
   it('clears only transient context when its Workbench unmounts', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const unregister = runtime.register(

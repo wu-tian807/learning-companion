@@ -23,6 +23,7 @@ interface ActiveRegistration {
 }
 
 interface PendingLaunch {
+  readonly ownerId?: string;
   readonly resolve: () => void;
   readonly reject: (error: unknown) => void;
   timer?: ReturnType<typeof setTimeout>;
@@ -56,6 +57,7 @@ function matchesSource(
 export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
   private readonly pendingLaunches = new Map<number, PendingLaunch>();
+  private readonly consumedLaunchOwners = new Map<number, string | undefined>();
   private activeRegistration: ActiveRegistration | undefined;
   /** All mounted Workbench sources, keyed by their visual owner. */
   private readonly registrations = new Map<string, ActiveRegistration>();
@@ -110,8 +112,15 @@ export class WorkbenchConversationRuntime {
         const wasActive = this.activeRegistration?.token === token;
         if (!wasActive) return;
         this.activeRegistration = [...this.registrations.values()].at(-1);
-        this.rejectPendingLaunches('AI 问答来源已关闭。');
-        this.launchId += 1;
+        const ownsLaunch =
+          this.snapshot.launchRequest?.sourceOwnerId === normalizedOwnerId;
+        if (ownsLaunch) {
+          this.rejectPendingLaunches(
+            'AI 问答来源已关闭。',
+            normalizedOwnerId,
+          );
+          this.launchId += 1;
+        }
         this.update({
           panelOpen: this.snapshot.panelOpen,
           busy: this.snapshot.busy,
@@ -122,14 +131,16 @@ export class WorkbenchConversationRuntime {
           ...(this.snapshot.boundAssetId
             ? { boundAssetId: this.snapshot.boundAssetId }
             : {}),
-          ...(this.snapshot.panelOpen
+          ...(this.snapshot.panelOpen && ownsLaunch
             ? {
                 launchRequest: Object.freeze({
                   id: this.launchId,
                   clearContext: true,
                 }),
               }
-            : {}),
+            : this.snapshot.launchRequest
+              ? { launchRequest: this.snapshot.launchRequest }
+              : {}),
         });
       });
     };
@@ -150,6 +161,7 @@ export class WorkbenchConversationRuntime {
 
     try {
       const pending: PendingLaunch = {
+        ownerId: input.ownerId?.trim(),
         resolve: resolvePending!,
         reject: rejectPending!,
       };
@@ -231,6 +243,7 @@ export class WorkbenchConversationRuntime {
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
       ...(input.submit === true ? { submit: true } : {}),
+      ...(ownerId ? { sourceOwnerId: ownerId } : {}),
     });
     this.update({
       ...this.snapshot,
@@ -265,6 +278,15 @@ export class WorkbenchConversationRuntime {
 
   consumeLaunchRequest(requestId: number): void {
     if (this.snapshot.launchRequest?.id !== requestId) return;
+    this.consumedLaunchOwners.set(
+      requestId,
+      this.snapshot.launchRequest.sourceOwnerId,
+    );
+    if (this.consumedLaunchOwners.size > 128) {
+      this.consumedLaunchOwners.delete(
+        this.consumedLaunchOwners.keys().next().value!,
+      );
+    }
     this.update({ ...this.snapshot, launchRequest: undefined });
   }
 
@@ -328,6 +350,7 @@ export class WorkbenchConversationRuntime {
     this.cancelReveal();
     this.activeRegistration = undefined;
     this.registrations.clear();
+    this.consumedLaunchOwners.clear();
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }
@@ -339,8 +362,9 @@ export class WorkbenchConversationRuntime {
     this.revealAbortController = undefined;
   }
 
-  private rejectPendingLaunches(message: string): void {
+  private rejectPendingLaunches(message: string, ownerId?: string): void {
     for (const [requestId, pending] of this.pendingLaunches) {
+      if (ownerId !== undefined && pending.ownerId !== ownerId) continue;
       this.pendingLaunches.delete(requestId);
       if (pending.timer) clearTimeout(pending.timer);
       pending.reject(new Error(message));
