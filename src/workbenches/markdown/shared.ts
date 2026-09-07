@@ -524,8 +524,27 @@ export function isMarkdownWorkbenchStateV1(
     return false;
   }
 
-  const recovery = (value as Record<string, unknown>).recovery;
-  return recovery === undefined || isMarkdownRecoveryState(recovery);
+  const record = value as Record<string, unknown>;
+  const recovery = record.recovery;
+  const conflicts = record.conflictRecoveries;
+  return (
+    (recovery === undefined || isMarkdownRecoveryState(recovery)) &&
+    (conflicts === undefined ||
+      (Array.isArray(conflicts) &&
+        conflicts.every((item) =>
+          isRecord(item) &&
+          typeof item.conflictId === 'string' && item.conflictId.length > 0 &&
+          typeof item.dataKey === 'string' &&
+          item.dataKey.startsWith(MARKDOWN_CONFLICT_RECOVERY_DATA_KEY + ':') &&
+          isRequiredText(item.baseRevision) &&
+          isMarkdownEncoding(item.encoding) &&
+          isMarkdownLineEnding(item.lineEnding) &&
+          typeof item.hasByteOrderMark === 'boolean' &&
+          isMarkdownEditMode(item.editedFrom) &&
+          isNonNegativeInteger(item.updatedTime) &&
+          isNonNegativeInteger(item.sharedDocumentVersion),
+        )))
+  );
 }
 
 export function isMarkdownWorkbenchPayload(
@@ -536,6 +555,7 @@ export function isMarkdownWorkbenchPayload(
   }
 
   const recovery = value.recovery;
+  const conflict = value.conflictRecovery;
 
   return (
     typeof value.diskSource === 'string' &&
@@ -557,7 +577,20 @@ export function isMarkdownWorkbenchPayload(
         typeof recovery.hasByteOrderMark === 'boolean' &&
         isMarkdownEditMode(recovery.editedFrom) &&
         isNonNegativeInteger(recovery.updatedTime) &&
-        typeof recovery.sourceChanged === 'boolean'))
+        typeof recovery.sourceChanged === 'boolean')) &&
+    (conflict === undefined ||
+      (isRecord(conflict) &&
+        typeof conflict.content === 'string' &&
+        typeof conflict.sharedContent === 'string' &&
+        typeof conflict.conflictId === 'string' && conflict.conflictId.length > 0 &&
+        isRequiredText(conflict.baseRevision) &&
+        isMarkdownEncoding(conflict.encoding) &&
+        isMarkdownLineEnding(conflict.lineEnding) &&
+        typeof conflict.hasByteOrderMark === 'boolean' &&
+        isMarkdownEditMode(conflict.editedFrom) &&
+        isNonNegativeInteger(conflict.updatedTime) &&
+        typeof conflict.sourceChanged === 'boolean' &&
+        isNonNegativeInteger(conflict.sharedDocumentVersion)))
   );
 }
 

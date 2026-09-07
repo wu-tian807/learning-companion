@@ -16,6 +16,7 @@ import {
   resolve,
   sep,
 } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
 import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
@@ -237,9 +238,16 @@ export class MarkdownWorkbenchProvider
           conflict.dataKey,
         )
       : undefined;
-    const conflictContent = conflictData
-      ? new TextDecoder('utf-8').decode(conflictData.data)
-      : undefined;
+    let conflictContent: string | undefined;
+    if (conflictData) {
+      try {
+        conflictContent = new TextDecoder('utf-8', { fatal: true }).decode(
+          conflictData.data,
+        );
+      } catch {
+        conflictContent = undefined;
+      }
+    }
 
     return {
       payload: {
@@ -441,7 +449,7 @@ export class MarkdownWorkbenchProvider
         document.recovery = undefined;
         document.documentVersion += 1;
         this.publishDocumentChange(document, context.sessionId);
-        await this.clearRecovery(runtime.assetId, runtime.viewState);
+        await this.clearRecovery(runtime.assetId, runtime.viewState, document.conflictRecoveries);
         return createResult({ discarded: true });
       }
       case markdownCommands.insertImage: {
@@ -672,7 +680,7 @@ export class MarkdownWorkbenchProvider
   ): Promise<void> {
     const document = runtime.document;
     const updatedTime = this.now();
-    const conflictId = runtime.sessionId + ':' + updatedTime;
+    const conflictId = randomUUID();
     const dataKey = MARKDOWN_CONFLICT_RECOVERY_DATA_KEY + ':' + conflictId;
     const recovery: MarkdownConflictRecoveryState = {
       dataKey, conflictId, baseRevision: document.source.revision,
@@ -935,7 +943,7 @@ export class MarkdownWorkbenchProvider
     if (!this.isDirty(document)) {
       if (document.recovery) {
         document.recovery = undefined;
-        await this.clearRecovery(document.assetId, viewState);
+        await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries);
       }
       return;
     }
@@ -970,7 +978,7 @@ export class MarkdownWorkbenchProvider
   ): Promise<number> {
     if (!this.isDirty(document)) {
       document.recovery = undefined;
-      await this.clearRecovery(document.assetId, viewState);
+      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries);
       return this.now();
     }
 
@@ -1026,7 +1034,7 @@ export class MarkdownWorkbenchProvider
   ): Promise<WriteTextContentResult> {
     if (!this.isDirty(document)) {
       document.recovery = undefined;
-      await this.clearRecovery(document.assetId, viewState);
+      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries);
       return { revision: document.source.revision };
     }
 
@@ -1060,7 +1068,7 @@ export class MarkdownWorkbenchProvider
       await this.scheduleRecovery(document, viewState);
     } else {
       document.recovery = undefined;
-      await this.clearRecovery(document.assetId, viewState);
+      await this.clearRecovery(document.assetId, viewState, document.conflictRecoveries);
     }
     // A newer shared edit can arrive during the write.  Never collapse it
     // into the submitted source snapshot; it remains dirty and recoverable.
@@ -1083,13 +1091,17 @@ export class MarkdownWorkbenchProvider
   private async clearRecovery(
     assetId: string,
     viewState: MarkdownWorkbenchViewState,
+    conflictRecoveries: readonly MarkdownConflictRecoveryState[] = [],
   ): Promise<void> {
     await this.dataDatabase.delete(
       assetId,
       MARKDOWN_WORKBENCH_ID,
       MARKDOWN_RECOVERY_DATA_KEY,
     );
-    await this.saveState(assetId, viewState);
+    await this.saveState(assetId, {
+      ...viewState,
+      ...(conflictRecoveries.length > 0 ? { conflictRecoveries } : {}),
+    });
   }
 
   private async saveCurrentState(
