@@ -9,7 +9,8 @@ import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
-import { MarkdownWorkbenchView } from './renderer';
+import { markdownLocationHrefAt, MarkdownWorkbenchView } from './renderer';
+import { createWorkbenchLocationHref } from '../../shared/workbench/location-reference';
 import {
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
   MARKDOWN_WORKBENCH_ID,
@@ -82,6 +83,23 @@ const basePayload = {
 } as const;
 
 describe('MarkdownWorkbenchView', () => {
+  it('recognizes a Ctrl-clickable v2 location link in source Markdown only at its href', () => {
+    const href = createWorkbenchLocationHref({
+      version: 2,
+      projectId: 'project',
+      assetId: 'source',
+      target: {
+        scope: 'content', targetType: 'markdown.source-range', targetVersion: 1,
+        targetPayload: { exact: 'quoted' },
+      },
+      sourceRevision: 'r1',
+    });
+    const line = `[原文](${href})`;
+
+    expect(markdownLocationHrefAt(line, line.indexOf(href))).toBe(href);
+    expect(markdownLocationHrefAt(line, 1)).toBeUndefined();
+  });
+
   it('renders the full-height WYSIWYG host without exposing local paths', () => {
     const markup = render(basePayload);
 

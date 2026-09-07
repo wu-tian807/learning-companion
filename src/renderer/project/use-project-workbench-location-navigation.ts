@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { parseWorkbenchLocationHref } from '../../shared/workbench/location-reference';
 import { parseProjectLearningNoteTargetHref } from '../../shared/project-learning-notes';
 import { selectAndRevealWorkbenchTarget } from '../workbench/host/workbench-target-bridge';
+import { clearWorkbenchLocationSnapshot } from '../workbench/location-snapshot-store';
 
 /**
  * Navigation belongs to a Project, not to the Markdown component that happens
@@ -20,6 +21,7 @@ export function useProjectWorkbenchLocationNavigation(
       currentRef.current?.abort(
         new DOMException('Project 已关闭。', 'AbortError'),
       );
+      clearWorkbenchLocationSnapshot(projectId);
     },
     [projectId],
   );

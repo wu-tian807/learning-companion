@@ -14,7 +14,13 @@ export interface MarkdownRendererActionsOptions {
   readonly lineEnding: MarkdownLineEnding;
   readonly viewState: MarkdownWorkbenchViewState;
   readonly hasSelection: () => boolean;
+  readonly canCaptureLocationReference: () => boolean;
   readonly onAiExplain: (
+    text: string,
+    target: ContentAssetTarget,
+  ) => Promise<void> | void;
+  readonly onInsertLocationReference: () => Promise<void> | void;
+  readonly onCaptureLocationReference: (
     text: string,
     target: ContentAssetTarget,
   ) => Promise<void> | void;
@@ -35,7 +41,10 @@ export function createMarkdownRendererActions({
   lineEnding,
   viewState,
   hasSelection,
+  canCaptureLocationReference,
   onAiExplain,
+  onInsertLocationReference,
+  onCaptureLocationReference,
   onSetEncoding,
   onSetLineEnding,
   onSetViewState,
@@ -84,6 +93,21 @@ export function createMarkdownRendererActions({
         id: 'markdown.reveal',
         enabled: true,
         execute: onReveal,
+      },
+      {
+        id: 'markdown.insert-location-reference',
+        enabled: true,
+        execute: onInsertLocationReference,
+      },
+      {
+        id: 'markdown.capture-location-reference',
+        enabled: () => hasSelection() && canCaptureLocationReference(),
+        execute: (context) => {
+          const selection = findTextSelectionInput(context);
+          const target = context.focus;
+          if (!selection?.text || !target) return;
+          return onCaptureLocationReference(selection.text, target);
+        },
       },
       {
         id: 'markdown.ai.explain-selection',
@@ -171,6 +195,32 @@ export function createMarkdownRendererActions({
           kind: 'action',
           label: '在文件夹中显示',
           closePolicy: 'on-success',
+        },
+      },
+      {
+        id: 'markdown.insert-location-reference.context-menu',
+        actionId: 'markdown.insert-location-reference',
+        surface: 'context-menu',
+        group: '70-reference',
+        groupLabel: '引用',
+        order: 10,
+        presentation: {
+          kind: 'action',
+          label: '插入已选原文位置引用',
+          closePolicy: 'on-success',
+        },
+      },
+      {
+        id: 'markdown.capture-location-reference.context-menu',
+        actionId: 'markdown.capture-location-reference',
+        surface: 'context-menu',
+        group: '70-reference',
+        groupLabel: '引用',
+        order: 0,
+        presentation: {
+          kind: 'action',
+          label: '设为引用来源',
+          disabledReason: '请先选择已保存的 Markdown 内容',
         },
       },
       {

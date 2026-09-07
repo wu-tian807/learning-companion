@@ -19,6 +19,10 @@ import './markdown-workbench.css';
 import { createEditorActionPreset } from '../../renderer/workbench/actions/editor-action-preset';
 import { CodeMirrorEditorActionAdapter } from '../../renderer/workbench/editor/codemirror-action-adapter';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
+import {
+  getLatestWorkbenchLocationSnapshot,
+  publishWorkbenchLocationSnapshot,
+} from '../../renderer/workbench/location-snapshot-store';
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
@@ -44,9 +48,13 @@ import {
   selectAndRevealWorkbenchTarget,
 } from '../../renderer/workbench/host/workbench-target-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
+import { parseProjectLearningNoteTargetHref } from '../../shared/project-learning-notes';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import type { AssetTarget } from '../../shared/workbench/asset-target';
-import { parseWorkbenchLocationHref } from '../../shared/workbench/location-reference';
+import {
+  createWorkbenchLocationHref,
+  parseWorkbenchLocationHref,
+} from '../../shared/workbench/location-reference';
 import {
   createTextRangeTarget,
   resolveTextRangeSelection,
@@ -109,6 +117,48 @@ async function fileToBase64(file: File): Promise<string> {
     );
   }
   return btoa(binary);
+}
+
+function markdownLocationLinkLabel(text: string): string {
+  const compact = text.replace(/\s+/gu, ' ').trim().slice(0, 160);
+  const label = compact || '原文位置';
+  return label.replace(/[\\\[\]]/gu, '\\$&');
+}
+
+/** Returns a portable location href only when the click lies inside its link. */
+export function markdownLocationHrefAt(
+  line: string,
+  offset: number,
+): string | undefined {
+  const expression = /\[[^\]]*\]\((#[^\s)]+)\)/gu;
+  for (const match of line.matchAll(expression)) {
+    const href = match[1];
+    if (!href || match.index === undefined) continue;
+    const hrefStart = match.index + match[0].lastIndexOf(href);
+    if (offset >= hrefStart && offset < hrefStart + href.length &&
+      (parseWorkbenchLocationHref(href) || parseProjectLearningNoteTargetHref(href))) {
+      return href;
+    }
+  }
+  return undefined;
+}
+
+function projectLocationReference(
+  href: string,
+  projectId: string,
+) {
+  const modern = parseWorkbenchLocationHref(href);
+  if (modern?.projectId === projectId) return modern;
+  const legacy = parseProjectLearningNoteTargetHref(href);
+  return legacy?.projectId === projectId
+    ? {
+        version: 2 as const,
+        projectId: legacy.projectId,
+        assetId: legacy.assetId,
+        target: legacy.target,
+        sourceRevision: legacy.sourceRevision,
+      }
+    : undefined;
 }
 
 function findMarkdownImageByCandidates(
@@ -307,6 +357,23 @@ type MarkdownConflictUiState = {
   };
 };
 
+type MarkdownInsertionBookmark =
+  | {
+      readonly kind: 'source';
+      readonly assetId: string;
+      readonly generation: number;
+      readonly view: EditorView;
+      readonly from: number;
+      readonly to: number;
+    }
+  | {
+      readonly kind: 'wysiwyg';
+      readonly assetId: string;
+      readonly generation: number;
+      readonly adapter: MarkdownEditorAdapter;
+      readonly range: Range;
+    };
+
 export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const {
@@ -340,6 +407,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       outlineVisible: false,
     } satisfies MarkdownWorkbenchViewState);
   const sourceEditorRef = useRef<ReactCodeMirrorRef>(null);
+  const openWorkbenchLocationRef = useRef<
+    ((href: string) => Promise<void>) | undefined
+  >(undefined);
+  const insertionBookmarkRef = useRef<MarkdownInsertionBookmark | undefined>(
+    undefined,
+  );
   const imageInputRef = useRef<HTMLInputElement>(null);
   const wysiwygAdapterRef = useRef<MarkdownEditorAdapter | undefined>(
     undefined,
@@ -400,6 +473,42 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   >();
   const dirty =
     workingBuffer !== diskSource || lineEnding !== savedLineEnding;
+
+  const reportMarkdownInteraction = useCallback(
+    (interaction: Parameters<typeof onInteractionChange>[0]) => {
+      onInteractionChange(interaction);
+    },
+    [onInteractionChange],
+  );
+
+  const captureLocationReference = useCallback(
+    (text: string, target: AssetTarget) => {
+      // The Target and revision are frozen in this same explicit operation.
+      // A dirty in-memory buffer has no honest source revision to export.
+      if (dirty || !sourceRevision || target.scope !== 'content') {
+        throw new Error('请先保存 Markdown，再设为引用来源。');
+      }
+      publishWorkbenchLocationSnapshot(markdownWorkbenchManifest, {
+        ownerId: bootstrap.sessionId,
+        projectId: asset.projectId,
+        reference: {
+          version: 2,
+          projectId: asset.projectId,
+          assetId: asset.id,
+          target,
+          sourceRevision,
+        },
+        text,
+      });
+    },
+    [
+      asset.id,
+      asset.projectId,
+      bootstrap.sessionId,
+      dirty,
+      sourceRevision,
+    ],
+  );
 
   const updateConflictState = useCallback(
     (next: MarkdownConflictUiState | undefined) => {
@@ -610,6 +719,28 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     return extensions;
   }, [viewState.wordWrap]);
 
+  const sourceLocationLinkExtension = useMemo(
+    () => EditorView.domEventHandlers({
+      click(event, view) {
+        if (!(event.ctrlKey || event.metaKey)) return false;
+        const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (position === null) return false;
+        const line = view.state.doc.lineAt(position);
+        const href = markdownLocationHrefAt(
+          line.text,
+          position - line.from,
+        );
+        if (!href || !projectLocationReference(href, asset.projectId)) {
+          return false;
+        }
+        event.preventDefault();
+        void openWorkbenchLocationRef.current?.(href);
+        return true;
+      },
+    }),
+    [asset.projectId],
+  );
+
   const sourceEditorActionAdapter = useMemo(
     () =>
       new CodeMirrorEditorActionAdapter({
@@ -658,6 +789,14 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         event.clientX,
         event.clientY,
       );
+      const view = sourceEditorRef.current?.view;
+      const range = view?.state.selection.main;
+      insertionBookmarkRef.current = view && range
+        ? {
+            kind: 'source', assetId: asset.id, generation: sourceEditorKey,
+            view, from: range.from, to: range.to,
+          }
+        : undefined;
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
@@ -667,8 +806,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     },
     [
       bootstrap.sessionId,
+      asset.id,
       recovery,
       runtime,
+      sourceEditorKey,
       sourceEditorActionAdapter,
     ],
   );
@@ -685,8 +826,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   );
 
   const configuredSourceExtensions = useMemo(
-    () => [...sourceExtensions, sourceContextMenuExtension],
-    [sourceContextMenuExtension, sourceExtensions],
+    () => [
+      ...sourceExtensions,
+      sourceContextMenuExtension,
+      sourceLocationLinkExtension,
+    ],
+    [sourceContextMenuExtension, sourceExtensions, sourceLocationLinkExtension],
   );
 
   const applyViewState = useCallback(
@@ -982,8 +1127,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         await onOpenWorkbenchLocation(href);
         return;
       }
-      const reference = parseWorkbenchLocationHref(href);
-      if (!reference || reference.projectId !== asset.projectId) {
+      const reference = projectLocationReference(href, asset.projectId);
+      if (!reference) {
         throw new Error('这条位置引用不属于当前 Project。');
       }
       if (!onSelectAsset) {
@@ -1014,6 +1159,63 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     },
     [asset.projectId, onOpenWorkbenchLocation, onSelectAsset],
   );
+
+  useEffect(() => {
+    openWorkbenchLocationRef.current = openWorkbenchLocation;
+    return () => {
+      if (openWorkbenchLocationRef.current === openWorkbenchLocation) {
+        openWorkbenchLocationRef.current = undefined;
+      }
+    };
+  }, [openWorkbenchLocation]);
+
+  const insertLocationReference = useCallback(async () => {
+    const snapshot = getLatestWorkbenchLocationSnapshot(asset.projectId);
+    if (!snapshot) {
+      throw new Error('请先在已保存的资料中选中一段内容。');
+    }
+    const href = createWorkbenchLocationHref(snapshot.reference);
+    const markdown = `[${markdownLocationLinkLabel(snapshot.text)}](${href})`;
+    const bookmark = insertionBookmarkRef.current;
+    if (!bookmark || bookmark.assetId !== asset.id) {
+      throw new Error('插入位置已失效，请在目标 Markdown 中重新打开菜单。');
+    }
+
+    if (bookmark.kind === 'source') {
+      if (
+        viewStateRef.current.viewMode !== 'source' ||
+        bookmark.generation !== sourceEditorKey ||
+        sourceEditorRef.current?.view !== bookmark.view
+      ) {
+        throw new Error('目标 Markdown 源码编辑器已切换，请重新打开菜单。');
+      }
+      bookmark.view.dispatch({
+        changes: { from: bookmark.from, to: bookmark.to, insert: markdown },
+        selection: { anchor: bookmark.from + markdown.length },
+        scrollIntoView: true,
+      });
+      bookmark.view.focus();
+      return;
+    }
+
+    if (
+      viewStateRef.current.viewMode !== 'wysiwyg' ||
+      bookmark.generation !== wysiwygEditorKey ||
+      wysiwygAdapterRef.current !== bookmark.adapter
+    ) {
+      throw new Error('目标 Markdown 可视化编辑器已切换，请重新打开菜单。');
+    }
+    const element = bookmark.adapter.getEditableElement();
+    if (!element || !element.contains(bookmark.range.startContainer) ||
+      !element.contains(bookmark.range.endContainer)) {
+      throw new Error('目标 Markdown 插入位置已失效，请重新打开菜单。');
+    }
+    element.focus();
+    const selection = element.ownerDocument.defaultView?.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(bookmark.range.cloneRange());
+    bookmark.adapter.insertMarkdown(markdown);
+  }, [asset.id, asset.projectId, sourceEditorKey, wysiwygEditorKey]);
 
   const resolvePickedImageMediaType = useCallback(
     (file: File) => {
@@ -1146,7 +1348,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       });
     },
     isInternalLinkAllowed: (href) =>
-      parseWorkbenchLocationHref(href)?.projectId === asset.projectId,
+      projectLocationReference(href, asset.projectId) !== undefined,
     onOpenInternalLink: (href) => {
       void openWorkbenchLocation(href).catch((error) => {
         reportError(error, '无法定位 Markdown 中的资料引用。');
@@ -1199,6 +1401,17 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           event.clientX,
           event.clientY,
         );
+      const adapter = wysiwygAdapterRef.current;
+      const selection = element.ownerDocument.defaultView?.getSelection();
+      const range = selection?.rangeCount
+        ? selection.getRangeAt(0).cloneRange()
+        : undefined;
+      insertionBookmarkRef.current = adapter && range
+        ? {
+            kind: 'wysiwyg', assetId: asset.id,
+            generation: wysiwygEditorKey, adapter, range,
+          }
+        : undefined;
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
@@ -1223,7 +1436,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         return;
       }
 
-      onInteractionChange(
+      reportMarkdownInteraction(
         wysiwygEditorActionAdapter.captureInteraction(),
       );
     };
@@ -1244,11 +1457,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     };
   }, [
     bootstrap.sessionId,
-    onInteractionChange,
+    asset.id,
+    reportMarkdownInteraction,
     recovery,
     runtime,
     visualEditorState,
     viewState.viewMode,
+    wysiwygEditorKey,
     wysiwygEditorActionAdapter,
   ]);
 
@@ -1294,7 +1509,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           ...viewStateRef.current,
           viewMode: mode,
         };
-        onInteractionChange({ inputs: [] });
+        reportMarkdownInteraction({ inputs: [] });
         applyViewState(next);
         await persistViewState(next);
 
@@ -1312,7 +1527,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [
       applyViewState,
       bootstrap.sessionId,
-      onInteractionChange,
+      reportMarkdownInteraction,
       persistViewState,
       recovery,
       reportError,
@@ -1427,7 +1642,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const onSourceUpdate = useCallback(
     (update: ViewUpdate) => {
       if (update.selectionSet) {
-        onInteractionChange(
+        reportMarkdownInteraction(
           sourceEditorActionAdapter.captureInteraction(),
         );
       }
@@ -1461,7 +1676,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       });
     },
     [
-      onInteractionChange,
+      reportMarkdownInteraction,
       runtime,
       scheduleViewStateSave,
       sourceEditorActionAdapter,
@@ -1952,6 +2167,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         viewState,
         hasSelection: () =>
           activeEditorActionAdapter.getState().canCopy,
+        canCaptureLocationReference: () =>
+          !dirty && Boolean(sourceRevision),
         onAiExplain: (text, target) => {
           conversationRuntime.open({
             ownerId: conversationOwnerId,
@@ -1961,6 +2178,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             }),
           });
         },
+        onInsertLocationReference: insertLocationReference,
+        onCaptureLocationReference: captureLocationReference,
         onSetEncoding: reopenWithEncoding,
         onSetLineEnding: updateLineEnding,
         onSetViewState: updateViewState,
@@ -1968,7 +2187,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       }),
     [
       dirty,
+      captureLocationReference,
       encoding,
+      insertLocationReference,
       lineEnding,
       activeEditorActionAdapter,
       asset.id,

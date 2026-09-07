@@ -25,7 +25,10 @@ describe('Markdown renderer actions', () => {
       lineEnding: 'lf',
       viewState: DEFAULT_MARKDOWN_WORKBENCH_STATE,
       hasSelection: () => hasSelection,
+      canCaptureLocationReference: () => true,
       onAiExplain: vi.fn(),
+      onInsertLocationReference: vi.fn(),
+      onCaptureLocationReference: vi.fn(),
       onSetEncoding: vi.fn(async () => undefined),
       onSetLineEnding: vi.fn(async () => undefined),
       onSetViewState: vi.fn(async () => undefined),
@@ -42,7 +45,11 @@ describe('Markdown renderer actions', () => {
       bundle.contributions
         .filter((entry) => entry.surface === 'context-menu')
         .map((entry) => entry.presentation.label),
-    ).toEqual(['就选中内容问 AI']);
+    ).toEqual([
+      '插入已选原文位置引用',
+      '设为引用来源',
+      '就选中内容问 AI',
+    ]);
   });
 
   it('asks AI with the selected text and its source Target', async () => {
@@ -54,7 +61,10 @@ describe('Markdown renderer actions', () => {
       lineEnding: 'lf',
       viewState: DEFAULT_MARKDOWN_WORKBENCH_STATE,
       hasSelection: () => true,
+      canCaptureLocationReference: () => true,
       onAiExplain,
+      onInsertLocationReference: vi.fn(),
+      onCaptureLocationReference: vi.fn(),
       onSetEncoding: vi.fn(async () => undefined),
       onSetLineEnding: vi.fn(async () => undefined),
       onSetViewState: vi.fn(async () => undefined),
@@ -84,5 +94,65 @@ describe('Markdown renderer actions', () => {
     });
 
     expect(onAiExplain).toHaveBeenCalledWith(source, target);
+  });
+
+  it('keeps location insertion independent from AI selection state', async () => {
+    const onInsertLocationReference = vi.fn(async () => undefined);
+    const bundle = createMarkdownRendererActions({
+      disabled: false,
+      encodingDisabled: false,
+      encoding: 'utf-8',
+      lineEnding: 'lf',
+      viewState: DEFAULT_MARKDOWN_WORKBENCH_STATE,
+      hasSelection: () => false,
+      canCaptureLocationReference: () => false,
+      onAiExplain: vi.fn(),
+      onInsertLocationReference,
+      onCaptureLocationReference: vi.fn(),
+      onSetEncoding: vi.fn(async () => undefined),
+      onSetLineEnding: vi.fn(async () => undefined),
+      onSetViewState: vi.fn(async () => undefined),
+      onReveal: vi.fn(),
+    });
+
+    const insert = bundle.actions.find(
+      (action) => action.id === 'markdown.insert-location-reference',
+    )!;
+    await insert.execute({
+      projectId: 'project-1', assetId: 'note-1', workbenchId: 'builtin.markdown',
+      sessionId: 'note-session', origin: 'context-menu', inputs: [],
+    });
+
+    expect(isWorkbenchActionEnabled(insert)).toBe(true);
+    expect(onInsertLocationReference).toHaveBeenCalledOnce();
+  });
+
+  it('captures a location source only from the current text selection', async () => {
+    const onCaptureLocationReference = vi.fn();
+    const bundle = createMarkdownRendererActions({
+      disabled: false, encodingDisabled: false, encoding: 'utf-8',
+      lineEnding: 'lf', viewState: DEFAULT_MARKDOWN_WORKBENCH_STATE,
+      hasSelection: () => true, canCaptureLocationReference: () => true,
+      onAiExplain: vi.fn(), onInsertLocationReference: vi.fn(),
+      onCaptureLocationReference,
+      onSetEncoding: vi.fn(async () => undefined),
+      onSetLineEnding: vi.fn(async () => undefined),
+      onSetViewState: vi.fn(async () => undefined), onReveal: vi.fn(),
+    });
+    const capture = bundle.actions.find(
+      (action) => action.id === 'markdown.capture-location-reference',
+    )!;
+    const source = '要引用的原文';
+    const target = createTextRangeTarget(
+      MARKDOWN_SOURCE_RANGE_ANCHOR_TYPE, source, [{ start: 0, end: source.length }],
+    );
+    const interaction = interactionFromTextSelection({ text: source, target });
+
+    await capture.execute({
+      projectId: 'project-1', assetId: 'asset-1', workbenchId: 'builtin.markdown',
+      sessionId: 'session-1', origin: 'context-menu', ...interaction,
+    });
+
+    expect(onCaptureLocationReference).toHaveBeenCalledWith(source, target);
   });
 });

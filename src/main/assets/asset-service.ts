@@ -81,7 +81,6 @@ export interface AssetServiceApi {
     projectId: string,
     name?: string,
     initialMarkdown?: string,
-    options?: MarkdownNoteCreationOptions,
   ): Promise<AssetSnapshot>;
   update(
     assetId: string,
@@ -139,17 +138,10 @@ export interface AssetServiceUpdateOptions {
 }
 
 export interface StageGeneratedAssetFileInput {
-  /** Reserved Asset identity for a persisted recovery operation. */
-  readonly assetId?: string;
   readonly fileName: string;
   readonly name: string;
   readonly mediaType: string;
   readonly content: Uint8Array;
-}
-
-export interface MarkdownNoteCreationOptions {
-  /** Use only when a Project-owned migration has persisted this operation id. */
-  readonly assetId?: string;
 }
 
 export interface StagedGeneratedAsset {
@@ -582,41 +574,16 @@ export class AssetService implements AssetServiceApi {
         ) {
           throw new AppError('DATA_INTEGRITY_ERROR');
         }
-        if (input.assetId && existing.id !== input.assetId) {
-          throw new Error(
-            '笔记迁移操作已指向另一份资料，已停止恢复以避免覆盖。',
-          );
-        }
-        if (input.assetId && !generated.created) {
-          const existingResolved = await this.resolverRegistry.resolve(
-            existing.contentRef,
-            context,
-          );
-          try {
-            const persisted = await existingResolved.handle?.readBytes?.();
-            const matchesExpectedBody =
-              persisted !== undefined &&
-              persisted.content.byteLength === input.content.byteLength &&
-              persisted.content.every(
-                (byte, index) => byte === input.content[index],
-              );
-            if (
-              existing.contentRef.base !== PROJECT_WORKSPACE_CONTENT_BASE ||
-              !matchesExpectedBody
-            ) {
-              throw new Error(
-                '笔记迁移文件与待恢复内容不一致，已停止恢复以避免覆盖。',
-              );
-            }
-          } finally {
-            await existingResolved.handle?.close();
-          }
-        }
-
         return Object.freeze({
           asset: cloneAssetSnapshot(existing),
           created: false,
         });
+      }
+
+      // Generic generated output is idempotent only when its Asset is already
+      // registered above. Never adopt an unknown pre-existing managed file.
+      if (!generated.created) {
+        throw new AppError('REGISTRATION_CONFLICT');
       }
 
       resolved = await this.resolverRegistry.resolve(
@@ -633,22 +600,6 @@ export class AssetService implements AssetServiceApi {
         throw new AppError('ASSET_UNAVAILABLE');
       }
 
-      if (input.assetId && !generated.created) {
-        const persisted = await resolved.handle?.readBytes?.();
-        const isManagedExpectedFile =
-          generated.contentRef.base === PROJECT_WORKSPACE_CONTENT_BASE &&
-          isSameContentRef(resolved.contentRef, generated.contentRef);
-        const matchesExpectedBody =
-          persisted !== undefined &&
-          persisted.content.byteLength === input.content.byteLength &&
-          persisted.content.every((byte, index) => byte === input.content[index]);
-        if (!isManagedExpectedFile || !matchesExpectedBody) {
-          throw new Error(
-            '笔记迁移文件与待恢复内容不一致，已停止恢复以避免覆盖。',
-          );
-        }
-      }
-
       const detectedMediaType = await this.dependencies.detectMediaType(
         resolved.location.absolutePath,
       );
@@ -659,7 +610,6 @@ export class AssetService implements AssetServiceApi {
       }
 
       const asset = this.assetDatabase.add(projectId, {
-        ...(input.assetId ? { id: input.assetId } : {}),
         name: input.name,
         mediaType: input.mediaType,
         creationKind: 'generated',
@@ -697,7 +647,6 @@ export class AssetService implements AssetServiceApi {
     projectId: string,
     name = '新建笔记',
     initialMarkdown = '',
-    options: MarkdownNoteCreationOptions = {},
   ): Promise<AssetSnapshot> {
     const normalizedName = name.trim();
     // The display name may intentionally duplicate another note.  The managed
@@ -711,15 +660,12 @@ export class AssetService implements AssetServiceApi {
       throw new AppError('INVALID_IPC_REQUEST');
     }
     const staged = await this.stageGeneratedFile(projectId, {
-      fileName: options.assetId
-        ? `note-${options.assetId}.md`
-        : `note-${randomUUID()}.md`,
-      ...(options.assetId ? { assetId: options.assetId } : {}),
+      fileName: `note-${randomUUID()}.md`,
       name: normalizedName,
       mediaType: MARKDOWN_ASSET_MEDIA_TYPE,
       content: new TextEncoder().encode(initialMarkdown),
     });
-    if (!staged.created && staged.asset.id !== options.assetId) {
+    if (!staged.created) {
       // UUID collisions are not a normal idempotency path.  Returning another
       // note would violate the new-note contract, so fail explicitly.
       throw new AppError('REGISTRATION_CONFLICT');
