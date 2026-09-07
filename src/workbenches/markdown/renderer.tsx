@@ -297,6 +297,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     onInteractionChange,
     onOpenExternal,
     onSelectAsset,
+    onOpenWorkbenchLocation,
+    subscribeEvent,
     onError,
     attachments,
     refreshAttachments,
@@ -305,6 +307,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     ? bootstrap.payload
     : undefined;
   const [sourceRevision, setSourceRevision] = useState(payload?.revision ?? '');
+  const documentVersionRef = useRef(payload?.documentVersion ?? 0);
   const initialViewState =
     payload?.state ??
     ({
@@ -358,6 +361,46 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
   const dirty =
     workingBuffer !== diskSource || lineEnding !== savedLineEnding;
+
+  useEffect(() => {
+    if (!subscribeEvent) return;
+    return subscribeEvent((event) => {
+      if (
+        event.type !== 'markdown:document-changed' ||
+        typeof event.payload !== 'object' ||
+        event.payload === null ||
+        Array.isArray(event.payload)
+      ) {
+        return;
+      }
+      const change = event.payload as Readonly<Record<string, unknown>>;
+      if (
+        typeof change.content !== 'string' ||
+        (change.lineEnding !== 'lf' && change.lineEnding !== 'crlf') ||
+        typeof change.revision !== 'string' ||
+        typeof change.documentVersion !== 'number' ||
+        !Number.isSafeInteger(change.documentVersion) ||
+        change.documentVersion <= documentVersionRef.current
+      ) {
+        return;
+      }
+      documentVersionRef.current = change.documentVersion;
+      workingBufferRef.current = change.content;
+      lineEndingRef.current = change.lineEnding;
+      setWorkingBuffer(change.content);
+      setDiskSource(change.content);
+      setLineEnding(change.lineEnding);
+      setSavedLineEnding(change.lineEnding);
+      setSourceRevision(change.revision);
+      // Recreate only the active editor. Its own selection/scroll state is
+      // deliberately not copied from the other viewport.
+      if (viewStateRef.current.viewMode === 'source') {
+        setSourceEditorKey((current) => current + 1);
+      } else {
+        setWysiwygEditorKey((current) => current + 1);
+      }
+    });
+  }, [subscribeEvent]);
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -537,7 +580,14 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           sourceViewState,
         }),
       );
-      return acceptSyncResult(result);
+      const accepted = acceptSyncResult(result);
+      if (accepted.documentVersion !== undefined) {
+        documentVersionRef.current = Math.max(
+          documentVersionRef.current,
+          accepted.documentVersion,
+        );
+      }
+      return accepted;
     },
     [acceptSyncResult, executeCommand],
   );
@@ -551,7 +601,14 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           wysiwygScrollTop: scrollTop,
         }),
       );
-      return acceptSyncResult(result);
+      const accepted = acceptSyncResult(result);
+      if (accepted.documentVersion !== undefined) {
+        documentVersionRef.current = Math.max(
+          documentVersionRef.current,
+          accepted.documentVersion,
+        );
+      }
+      return accepted;
     },
     [acceptSyncResult, executeCommand],
   );
@@ -576,17 +633,15 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [executeCommand],
   );
 
+  // Used only by the compatibility fallback below. Project hosts provide the
+  // public navigator, whose lifetime is intentionally longer than this view.
   const locationNavigationRef = useRef<AbortController | undefined>(undefined);
-  useEffect(
-    () => () => {
-      locationNavigationRef.current?.abort(
-        new DOMException('Markdown 视口已关闭。', 'AbortError'),
-      );
-    },
-    [],
-  );
   const openWorkbenchLocation = useCallback(
     async (href: string) => {
+      if (onOpenWorkbenchLocation) {
+        await onOpenWorkbenchLocation(href);
+        return;
+      }
       const reference = parseWorkbenchLocationHref(href);
       if (!reference || reference.projectId !== asset.projectId) {
         throw new Error('这条位置引用不属于当前 Project。');
@@ -617,7 +672,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         }
       }
     },
-    [asset.projectId, onSelectAsset],
+    [asset.projectId, onOpenWorkbenchLocation, onSelectAsset],
   );
 
   const resolvePickedImageMediaType = useCallback(
@@ -959,6 +1014,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     setSaving(true);
     try {
       await flushCurrentBuffer();
+      const submittedBuffer = workingBufferRef.current;
+      const submittedLineEnding = lineEndingRef.current;
 
       const result = await executeCommand({
         type: markdownCommands.save,
@@ -969,8 +1026,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         'Markdown Workbench 保存响应无效',
       );
       setSourceRevision(result.payload.revision);
-      setDiskSource(workingBufferRef.current);
-      setSavedLineEnding(lineEndingRef.current);
+      setDiskSource(submittedBuffer);
+      setSavedLineEnding(submittedLineEnding);
       wysiwygEditedSinceMountRef.current = false;
     } catch (error) {
       reportError(error, '无法保存 Markdown 文件。');

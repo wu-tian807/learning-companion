@@ -33,6 +33,11 @@ export interface RendererWorkbenchViewProps {
   readonly onReveal: () => Promise<void> | void;
   /** Select another Asset in the owning Project. */
   readonly onSelectAsset?: (assetId: string) => Promise<void> | void;
+  /**
+   * Project-scoped location navigation. It intentionally outlives a source
+   * view that is replaced while the destination Asset opens.
+   */
+  readonly onOpenWorkbenchLocation?: (href: string) => Promise<void>;
   readonly onOpenSettings?: () => void;
   readonly onInteractionChange: (
     interaction: WorkbenchInteractionSnapshot,

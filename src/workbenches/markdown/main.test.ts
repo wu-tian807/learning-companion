@@ -17,6 +17,7 @@ import {
   createAbsoluteLocalFileContentRef,
 } from '../../main/content/content-ref';
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
+import { WorkbenchEventBus } from '../../main/workbench/workbench-event-bus';
 import type {
   WorkbenchStateDataRecord,
   WorkbenchStateDataDatabaseApi,
@@ -200,6 +201,48 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(
       new TextDecoder().decode(writeBytes.mock.calls[0]?.[0].content),
     ).toBe('# Source 修改\n');
+  });
+
+  it('shares one Markdown document buffer across viewport sessions and keeps it after one closes', async () => {
+    const events = new WorkbenchEventBus();
+    const received: unknown[] = [];
+    events.subscribe((event) => received.push(event));
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
+      { workbenchEvents: events },
+    );
+    const { handle } = createHandle(source);
+    const first = createContext('first', handle);
+    const second = createContext('second', handle);
+    await provider.open(first);
+    const openedSecond = await provider.open(second);
+
+    await provider.command(
+      first,
+      createMarkdownSyncSourceCommand({
+        content: '# 两个视口看见同一份草稿\n',
+        lineEnding: 'lf',
+        sourceViewState,
+      }),
+    );
+
+    expect(received).toContainEqual({
+      sessionId: 'second',
+      type: 'markdown:document-changed',
+      payload: expect.objectContaining({
+        content: '# 两个视口看见同一份草稿\n',
+      }),
+    });
+    expect(openedSecond.payload).toMatchObject({
+      diskSource: source.content,
+    });
+
+    await provider.close(first);
+    const saved = await provider.command(second, {
+      type: markdownCommands.save,
+    });
+    expect(saved.payload).toMatchObject({ revision: 'revision-1' });
   });
 
   it('keeps input that arrives while a save is writing as a recoverable dirty buffer', async () => {

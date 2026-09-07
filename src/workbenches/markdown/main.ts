@@ -18,6 +18,7 @@ import {
 } from 'node:path';
 import { AppError } from '../../main/errors/app-error';
 import type { MainWorkbenchProvider } from '../../main/workbench/workbench-session';
+import type { WorkbenchEventBusApi } from '../../main/workbench/workbench-event-bus';
 import type { WorkbenchStateDataDatabaseApi } from '../../main/workbench/workbench-state-data-database';
 import type {
   WorkbenchStateRecord,
@@ -58,20 +59,37 @@ import {
 const RECOVERY_DEBOUNCE_MS = 800;
 
 interface MarkdownSessionRuntime {
+  readonly sessionId: string;
   readonly assetId: string;
   readonly handle: NonNullable<
     Parameters<MainWorkbenchProvider['open']>[0]['content']['handle']
   >;
   /** Markdown 源文件所在目录；缺失时图片命令不可用。 */
   readonly assetDirectory?: string;
+  viewState: MarkdownWorkbenchViewState;
+  readonly document: MarkdownDocumentRuntime;
+}
+
+/**
+ * The editable file is deliberately owned by the asset, not by a viewport
+ * session.  Sessions only own presentation state (cursor, scroll and mode).
+ * This is not a CRDT: concurrent stale writers are rejected instead of being
+ * silently merged.
+ */
+interface MarkdownDocumentRuntime {
+  readonly assetId: string;
+  readonly handle: MarkdownSessionRuntime['handle'];
   source: ResolvedTextContent;
   workingBuffer: string;
   currentLineEnding: MarkdownLineEnding;
   lastEditMode: MarkdownEditMode;
-  viewState: MarkdownWorkbenchViewState;
   recovery: MarkdownRecoveryState | undefined;
   recoveryTimer: ReturnType<typeof setTimeout> | undefined;
   recoveryTask: Promise<void>;
+  documentVersion: number;
+  lastWriterSessionId: string | undefined;
+  lastWriterUpdateId: number;
+  readonly sessionIds: Set<string>;
 }
 
 export interface MarkdownImageFileSystemApi {
@@ -96,6 +114,7 @@ export interface MarkdownWorkbenchProviderDependencies {
   readonly textContentAdapter: TextContentAdapter;
   readonly recoveryDebounceMs: number;
   readonly imageFileSystem?: Partial<MarkdownImageFileSystemApi>;
+  readonly workbenchEvents?: WorkbenchEventBusApi;
 }
 
 function createResult(payload: JsonValue): WorkbenchCommandResult {
@@ -129,10 +148,12 @@ export class MarkdownWorkbenchProvider
   implements MainWorkbenchProvider {
   readonly manifest = markdownWorkbenchManifest;
   private readonly sessions = new Map<string, MarkdownSessionRuntime>();
+  private readonly documents = new Map<string, MarkdownDocumentRuntime>();
   private readonly now: () => number;
   private readonly textContentAdapter: TextContentAdapter;
   private readonly recoveryDebounceMs: number;
   private readonly imageFileSystem: MarkdownImageFileSystemApi;
+  private readonly workbenchEvents: WorkbenchEventBusApi | undefined;
 
   constructor(
     private readonly stateDatabase: WorkbenchStateDatabaseApi,
@@ -148,6 +169,7 @@ export class MarkdownWorkbenchProvider
       ...defaultImageFileSystem,
       ...dependencies.imageFileSystem,
     };
+    this.workbenchEvents = dependencies.workbenchEvents;
   }
 
   async open(context: Parameters<MainWorkbenchProvider['open']>[0]) {
@@ -167,47 +189,14 @@ export class MarkdownWorkbenchProvider
       throw new AppError('REGISTRATION_CONFLICT');
     }
 
-    const source = await this.textContentAdapter.read(handle);
-
-    if (!isMarkdownEncoding(source.encoding)) {
-      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
-    }
-
     let state = this.readState(context.state);
-    let recoveryContent: string | undefined;
-
-    if (state.recovery) {
-      const data = await this.dataDatabase.get(
-        context.asset.id,
-        MARKDOWN_WORKBENCH_ID,
-        state.recovery.dataKey,
-      );
-
-      if (data) {
-        try {
-          recoveryContent = new TextDecoder('utf-8', {
-            fatal: true,
-          }).decode(data.data);
-        } catch {
-          state = await this.removeInvalidRecovery(
-            context.asset.id,
-            state,
-          );
-        }
-      } else {
-        state = await this.removeInvalidRecovery(context.asset.id, state);
-      }
-    }
-
-    if (
-      recoveryContent === source.content &&
-      state.recovery?.encoding === source.encoding &&
-      state.recovery.lineEnding === source.lineEnding &&
-      state.recovery.hasByteOrderMark === source.hasByteOrderMark
-    ) {
-      state = await this.removeInvalidRecovery(context.asset.id, state);
-      recoveryContent = undefined;
-    }
+    const existingDocument = this.documents.get(context.asset.id);
+    const opened = existingDocument
+      ? { document: existingDocument, recoveryContent: undefined }
+      : await this.openDocument(context.asset.id, handle, state);
+    const document = opened.document;
+    const recoveryContent = opened.recoveryContent;
+    state = opened.state ?? state;
 
     const viewState = cloneMarkdownWorkbenchViewState(state);
     const assetLocation = context.content.location;
@@ -216,39 +205,35 @@ export class MarkdownWorkbenchProvider
         ? dirname(assetLocation.absolutePath)
         : undefined;
     this.sessions.set(context.sessionId, {
+      sessionId: context.sessionId,
       assetId: context.asset.id,
       handle,
       ...(assetDirectory ? { assetDirectory } : {}),
-      source,
-      workingBuffer: source.content,
-      currentLineEnding: source.lineEnding,
-      lastEditMode: viewState.viewMode,
       viewState,
-      recovery: state.recovery,
-      recoveryTimer: undefined,
-      recoveryTask: Promise.resolve(),
+      document,
     });
+    document.sessionIds.add(context.sessionId);
 
     return {
       payload: {
-        diskSource: source.content,
-        encoding: source.encoding,
-        lineEnding: source.lineEnding,
-        hasByteOrderMark: source.hasByteOrderMark,
-        revision: source.revision,
+        diskSource: document.source.content,
+        encoding: document.source.encoding,
+        lineEnding: document.source.lineEnding,
+        hasByteOrderMark: document.source.hasByteOrderMark,
+        revision: document.source.revision,
         state: viewState,
-        ...(state.recovery && recoveryContent !== undefined
+        ...(document.recovery && recoveryContent !== undefined
           ? {
               recovery: {
                 content: recoveryContent,
-                baseRevision: state.recovery.baseRevision,
-                encoding: state.recovery.encoding,
-                lineEnding: state.recovery.lineEnding,
-                hasByteOrderMark: state.recovery.hasByteOrderMark,
-                editedFrom: state.recovery.editedFrom,
-                updatedTime: state.recovery.updatedTime,
+                baseRevision: document.recovery.baseRevision,
+                encoding: document.recovery.encoding,
+                lineEnding: document.recovery.lineEnding,
+                hasByteOrderMark: document.recovery.hasByteOrderMark,
+                editedFrom: document.recovery.editedFrom,
+                updatedTime: document.recovery.updatedTime,
                 sourceChanged:
-                  state.recovery.baseRevision !== source.revision,
+                  document.recovery.baseRevision !== document.source.revision,
               },
             }
           : {}),
@@ -261,9 +246,10 @@ export class MarkdownWorkbenchProvider
     command: Parameters<MainWorkbenchProvider['command']>[1],
   ): Promise<WorkbenchCommandResult> {
     const runtime = this.findRuntime(context.sessionId);
+    const document = runtime.document;
     this.validateCommand(command);
-    this.cancelScheduledRecovery(runtime);
-    await this.waitForRecovery(runtime);
+    this.cancelScheduledRecovery(document);
+    await this.waitForRecovery(document);
 
     switch (command.type) {
       case markdownCommands.syncSourceBuffer: {
@@ -271,15 +257,13 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        runtime.workingBuffer = command.payload.content;
-        runtime.currentLineEnding = command.payload.lineEnding;
-        runtime.lastEditMode = 'source';
+        this.acceptDocumentBuffer(runtime, command.payload.content, command.payload.lineEnding, 'source');
         runtime.viewState = {
           ...runtime.viewState,
           viewMode: 'source',
           sourceViewState: command.payload.sourceViewState,
         };
-        await this.scheduleRecovery(runtime);
+        await this.scheduleRecovery(document, runtime.viewState);
         return this.createSyncResult(runtime);
       }
       case markdownCommands.syncWysiwygBuffer: {
@@ -287,15 +271,13 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        runtime.workingBuffer = command.payload.content;
-        runtime.currentLineEnding = command.payload.lineEnding;
-        runtime.lastEditMode = 'wysiwyg';
+        this.acceptDocumentBuffer(runtime, command.payload.content, command.payload.lineEnding, 'wysiwyg');
         runtime.viewState = {
           ...runtime.viewState,
           viewMode: 'wysiwyg',
           wysiwygScrollTop: command.payload.wysiwygScrollTop,
         };
-        await this.scheduleRecovery(runtime);
+        await this.scheduleRecovery(document, runtime.viewState);
         return this.createSyncResult(runtime);
       }
       case markdownCommands.backup: {
@@ -303,9 +285,9 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        this.cancelScheduledRecovery(runtime);
+        this.cancelScheduledRecovery(document);
         return createResult({
-          backedUpTime: await this.persistRecovery(runtime),
+          backedUpTime: await this.persistRecovery(document, runtime.viewState),
         });
       }
       case markdownCommands.save: {
@@ -314,9 +296,9 @@ export class MarkdownWorkbenchProvider
         }
 
         try {
-          return this.createSaveResult(await this.saveSource(runtime));
+          return this.createSaveResult(await this.saveSource(document, runtime.viewState));
         } catch (error) {
-          await this.scheduleRecovery(runtime);
+          await this.scheduleRecovery(document, runtime.viewState);
           throw error;
         }
       }
@@ -329,8 +311,8 @@ export class MarkdownWorkbenchProvider
           command.payload,
         );
         await this.saveCurrentState(runtime);
-        if (this.isDirty(runtime)) {
-          await this.scheduleRecovery(runtime);
+        if (this.isDirty(document)) {
+          await this.scheduleRecovery(document, runtime.viewState);
         }
         return createResult({ saved: true, savedTime: this.now() });
       }
@@ -339,11 +321,13 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        runtime.currentLineEnding = command.payload.lineEnding;
-        await this.scheduleRecovery(runtime);
+        document.currentLineEnding = command.payload.lineEnding;
+        document.documentVersion += 1;
+        this.publishDocumentChange(document, context.sessionId);
+        await this.scheduleRecovery(document, runtime.viewState);
         return createResult({
-          lineEnding: runtime.currentLineEnding,
-          dirty: this.isDirty(runtime),
+          lineEnding: document.currentLineEnding,
+          dirty: this.isDirty(document),
         });
       }
       case markdownCommands.reopenWithEncoding: {
@@ -351,14 +335,14 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        if (this.isDirty(runtime) || runtime.recovery) {
-          if (this.isDirty(runtime)) {
-            await this.scheduleRecovery(runtime);
+        if (this.isDirty(document) || document.recovery) {
+          if (this.isDirty(document)) {
+            await this.scheduleRecovery(document, runtime.viewState);
           }
           throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
         }
 
-        const source = await this.textContentAdapter.read(runtime.handle, {
+        const source = await this.textContentAdapter.read(document.handle, {
           encoding: command.payload.encoding,
         });
 
@@ -366,9 +350,11 @@ export class MarkdownWorkbenchProvider
           throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
         }
 
-        runtime.source = source;
-        runtime.workingBuffer = source.content;
-        runtime.currentLineEnding = source.lineEnding;
+        document.source = source;
+        document.workingBuffer = source.content;
+        document.currentLineEnding = source.lineEnding;
+        document.documentVersion += 1;
+        this.publishDocumentChange(document, context.sessionId);
 
         return createResult({
           diskSource: source.content,
@@ -383,11 +369,13 @@ export class MarkdownWorkbenchProvider
           throw new AppError('INVALID_IPC_REQUEST');
         }
 
-        this.cancelScheduledRecovery(runtime);
-        runtime.workingBuffer = runtime.source.content;
-        runtime.currentLineEnding = runtime.source.lineEnding;
-        runtime.lastEditMode = runtime.viewState.viewMode;
-        runtime.recovery = undefined;
+        this.cancelScheduledRecovery(document);
+        document.workingBuffer = document.source.content;
+        document.currentLineEnding = document.source.lineEnding;
+        document.lastEditMode = runtime.viewState.viewMode;
+        document.recovery = undefined;
+        document.documentVersion += 1;
+        this.publishDocumentChange(document, context.sessionId);
         await this.clearRecovery(runtime.assetId, runtime.viewState);
         return createResult({ discarded: true });
       }
@@ -427,12 +415,17 @@ export class MarkdownWorkbenchProvider
     }
 
     try {
-      this.cancelScheduledRecovery(runtime);
-      await this.waitForRecovery(runtime);
-      if (this.isDirty(runtime)) {
-        await this.persistRecovery(runtime);
+      const document = runtime.document;
+      document.sessionIds.delete(context.sessionId);
+      if (document.sessionIds.size === 0 && this.isDirty(document)) {
+        this.cancelScheduledRecovery(document);
+        await this.waitForRecovery(document);
+        await this.persistRecovery(document, runtime.viewState);
       }
     } finally {
+      if (runtime.document.sessionIds.size === 0) {
+        this.documents.delete(runtime.assetId);
+      }
       this.sessions.delete(context.sessionId);
     }
   }
@@ -445,6 +438,104 @@ export class MarkdownWorkbenchProvider
     }
 
     return runtime;
+  }
+
+  private async openDocument(
+    assetId: string,
+    handle: MarkdownSessionRuntime['handle'],
+    initialState: MarkdownWorkbenchStateV1,
+  ): Promise<{
+    readonly document: MarkdownDocumentRuntime;
+    readonly recoveryContent: string | undefined;
+    readonly state?: MarkdownWorkbenchStateV1;
+  }> {
+    const source = await this.textContentAdapter.read(handle);
+    if (!isMarkdownEncoding(source.encoding)) {
+      throw new AppError('CONTENT_ENCODING_UNSUPPORTED');
+    }
+
+    let state = initialState;
+    let recoveryContent: string | undefined;
+    if (state.recovery) {
+      const data = await this.dataDatabase.get(
+        assetId,
+        MARKDOWN_WORKBENCH_ID,
+        state.recovery.dataKey,
+      );
+      if (data) {
+        try {
+          recoveryContent = new TextDecoder('utf-8', { fatal: true }).decode(
+            data.data,
+          );
+        } catch {
+          state = await this.removeInvalidRecovery(assetId, state);
+        }
+      } else {
+        state = await this.removeInvalidRecovery(assetId, state);
+      }
+    }
+    if (
+      recoveryContent === source.content &&
+      state.recovery?.encoding === source.encoding &&
+      state.recovery.lineEnding === source.lineEnding &&
+      state.recovery.hasByteOrderMark === source.hasByteOrderMark
+    ) {
+      state = await this.removeInvalidRecovery(assetId, state);
+      recoveryContent = undefined;
+    }
+
+    const document: MarkdownDocumentRuntime = {
+      assetId,
+      handle,
+      source,
+      workingBuffer: source.content,
+      currentLineEnding: source.lineEnding,
+      lastEditMode: state.viewMode,
+      recovery: state.recovery,
+      recoveryTimer: undefined,
+      recoveryTask: Promise.resolve(),
+      documentVersion: 0,
+      lastWriterSessionId: undefined,
+      lastWriterUpdateId: 0,
+      sessionIds: new Set(),
+    };
+    this.documents.set(assetId, document);
+    return { document, recoveryContent, state };
+  }
+
+  private acceptDocumentBuffer(
+    runtime: MarkdownSessionRuntime,
+    content: string,
+    lineEnding: MarkdownLineEnding,
+    editedFrom: MarkdownEditMode,
+  ): void {
+    const document = runtime.document;
+    document.workingBuffer = content;
+    document.currentLineEnding = lineEnding;
+    document.lastEditMode = editedFrom;
+    document.documentVersion += 1;
+    this.publishDocumentChange(document, runtime.sessionId);
+  }
+
+  private publishDocumentChange(
+    document: MarkdownDocumentRuntime,
+    originSessionId?: string,
+  ): void {
+    if (!this.workbenchEvents) return;
+    for (const sessionId of document.sessionIds) {
+      if (sessionId === originSessionId) continue;
+      this.workbenchEvents.publish({
+        sessionId,
+        type: 'markdown:document-changed',
+        payload: {
+          content: document.workingBuffer,
+          lineEnding: document.currentLineEnding,
+          revision: document.source.revision,
+          documentVersion: document.documentVersion,
+          ...(originSessionId ? { originSessionId } : {}),
+        },
+      });
+    }
   }
 
   private validateCommand(
@@ -657,7 +748,7 @@ export class MarkdownWorkbenchProvider
   ): WorkbenchCommandResult {
     return createResult({
       accepted: true,
-      dirty: this.isDirty(runtime),
+      dirty: this.isDirty(runtime.document),
     });
   }
 
@@ -670,118 +761,128 @@ export class MarkdownWorkbenchProvider
     });
   }
 
-  private isDirty(runtime: MarkdownSessionRuntime): boolean {
+  private isDirty(document: MarkdownDocumentRuntime): boolean {
     return (
-      runtime.workingBuffer !== runtime.source.content ||
-      runtime.currentLineEnding !== runtime.source.lineEnding
+      document.workingBuffer !== document.source.content ||
+      document.currentLineEnding !== document.source.lineEnding
     );
   }
 
   private async scheduleRecovery(
-    runtime: MarkdownSessionRuntime,
+    document: MarkdownDocumentRuntime,
+    viewState: MarkdownWorkbenchViewState,
   ): Promise<void> {
-    this.cancelScheduledRecovery(runtime);
+    this.cancelScheduledRecovery(document);
 
-    if (!this.isDirty(runtime)) {
-      if (runtime.recovery) {
-        runtime.recovery = undefined;
-        await this.clearRecovery(runtime.assetId, runtime.viewState);
+    if (!this.isDirty(document)) {
+      if (document.recovery) {
+        document.recovery = undefined;
+        await this.clearRecovery(document.assetId, viewState);
       }
       return;
     }
 
-    runtime.recoveryTimer = setTimeout(() => {
-      runtime.recoveryTimer = undefined;
-      const recoveryTask = runtime.recoveryTask.then(async () => {
-        await this.persistRecovery(runtime);
+    document.recoveryTimer = setTimeout(() => {
+      document.recoveryTimer = undefined;
+      const recoveryTask = document.recoveryTask.then(async () => {
+        await this.persistRecovery(document, viewState);
       });
-      runtime.recoveryTask = recoveryTask.catch((error: unknown) => {
+      document.recoveryTask = recoveryTask.catch((error: unknown) => {
         console.error('Markdown Workbench 自动恢复快照保存失败', error);
       });
     }, this.recoveryDebounceMs);
   }
 
-  private cancelScheduledRecovery(runtime: MarkdownSessionRuntime): void {
-    if (runtime.recoveryTimer !== undefined) {
-      clearTimeout(runtime.recoveryTimer);
-      runtime.recoveryTimer = undefined;
+  private cancelScheduledRecovery(document: MarkdownDocumentRuntime): void {
+    if (document.recoveryTimer !== undefined) {
+      clearTimeout(document.recoveryTimer);
+      document.recoveryTimer = undefined;
     }
   }
 
   private async waitForRecovery(
-    runtime: MarkdownSessionRuntime,
+    document: MarkdownDocumentRuntime,
   ): Promise<void> {
-    await runtime.recoveryTask;
+    await document.recoveryTask;
   }
 
   private async persistRecovery(
-    runtime: MarkdownSessionRuntime,
+    document: MarkdownDocumentRuntime,
+    viewState: MarkdownWorkbenchViewState,
   ): Promise<number> {
-    if (!this.isDirty(runtime)) {
-      runtime.recovery = undefined;
-      await this.clearRecovery(runtime.assetId, runtime.viewState);
+    if (!this.isDirty(document)) {
+      document.recovery = undefined;
+      await this.clearRecovery(document.assetId, viewState);
       return this.now();
     }
 
     const updatedTime = this.now();
     const recovery: MarkdownRecoveryState = {
       dataKey: MARKDOWN_RECOVERY_DATA_KEY,
-      baseRevision: runtime.source.revision,
-      encoding: runtime.source.encoding,
-      lineEnding: runtime.currentLineEnding,
-      hasByteOrderMark: runtime.source.hasByteOrderMark,
-      editedFrom: runtime.lastEditMode,
+      baseRevision: document.source.revision,
+      encoding: document.source.encoding,
+      lineEnding: document.currentLineEnding,
+      hasByteOrderMark: document.source.hasByteOrderMark,
+      editedFrom: document.lastEditMode,
       updatedTime,
     };
 
     await this.dataDatabase.save({
-      assetId: runtime.assetId,
+      assetId: document.assetId,
       workbenchId: MARKDOWN_WORKBENCH_ID,
       dataKey: MARKDOWN_RECOVERY_DATA_KEY,
-      data: new TextEncoder().encode(runtime.workingBuffer),
+      data: new TextEncoder().encode(document.workingBuffer),
       updatedTime,
     });
-    runtime.recovery = recovery;
-    await this.saveCurrentState(runtime);
+    document.recovery = recovery;
+    await this.saveState(document.assetId, { ...viewState, recovery });
     return updatedTime;
   }
 
   private async saveSource(
-    runtime: MarkdownSessionRuntime,
+    document: MarkdownDocumentRuntime,
+    viewState: MarkdownWorkbenchViewState,
   ): Promise<WriteTextContentResult> {
-    if (!this.isDirty(runtime)) {
-      runtime.recovery = undefined;
-      await this.clearRecovery(runtime.assetId, runtime.viewState);
-      return { revision: runtime.source.revision };
+    if (!this.isDirty(document)) {
+      document.recovery = undefined;
+      await this.clearRecovery(document.assetId, viewState);
+      return { revision: document.source.revision };
     }
 
     // A write is asynchronous.  Freeze both the buffer and its source basis so
     // a sync arriving while the handle is writing cannot be mistaken for disk
     // content when the promise resolves.
-    const submittedContent = runtime.workingBuffer;
-    const submittedLineEnding = runtime.currentLineEnding;
-    const submittedSource = runtime.source;
-    const result = await this.textContentAdapter.write(runtime.handle, {
+    const submittedContent = document.workingBuffer;
+    const submittedLineEnding = document.currentLineEnding;
+    const submittedSource = document.source;
+    const submittedVersion = document.documentVersion;
+    const result = await this.textContentAdapter.write(document.handle, {
       content: submittedContent,
       encoding: submittedSource.encoding,
       lineEnding: submittedLineEnding,
       hasByteOrderMark: submittedSource.hasByteOrderMark,
       expectedRevision: submittedSource.revision,
     });
-    runtime.source = {
+    document.source = {
       ...submittedSource,
       content: submittedContent,
       lineEnding: submittedLineEnding,
       revision: result.revision,
     };
-    if (this.isDirty(runtime)) {
+    if (this.isDirty(document)) {
       // New input landed during the write.  It remains dirty relative to the
       // committed snapshot and must survive close/restart.
-      await this.scheduleRecovery(runtime);
+      await this.scheduleRecovery(document, viewState);
     } else {
-      runtime.recovery = undefined;
-      await this.clearRecovery(runtime.assetId, runtime.viewState);
+      document.recovery = undefined;
+      await this.clearRecovery(document.assetId, viewState);
     }
+    // A newer shared edit can arrive during the write.  Never collapse it
+    // into the submitted source snapshot; it remains dirty and recoverable.
+    if (document.documentVersion !== submittedVersion) {
+      await this.scheduleRecovery(document, viewState);
+    }
+    this.publishDocumentChange(document);
     return result;
   }
 
@@ -811,7 +912,9 @@ export class MarkdownWorkbenchProvider
   ): Promise<void> {
     await this.saveState(runtime.assetId, {
       ...runtime.viewState,
-      recovery: runtime.recovery,
+      ...(runtime.document.recovery
+        ? { recovery: runtime.document.recovery }
+        : {}),
     });
   }
 

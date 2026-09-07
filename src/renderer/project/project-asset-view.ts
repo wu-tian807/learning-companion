@@ -83,7 +83,11 @@ export function applyAssetChangedEvent(
   );
 
   if (index < 0) {
-    return state;
+    // Delayed updates/deletes must never resurrect an Asset. Only Main's
+    // explicit created event may introduce one to an already loaded Project.
+    return event.change === 'created'
+      ? { kind: 'ready', assets: [...state.assets, event.asset] }
+      : state;
   }
 
   const assets = [...state.assets];

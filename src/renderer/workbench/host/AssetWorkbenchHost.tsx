@@ -40,6 +40,7 @@ interface AssetWorkbenchHostProps {
   readonly onRefresh: () => void;
   readonly onReveal: () => Promise<void> | void;
   readonly onSelectAsset?: (assetId: string) => Promise<void> | void;
+  readonly onOpenWorkbenchLocation?: (href: string) => Promise<void>;
   readonly onOpenSettings: () => void;
   readonly openAttempt?: number;
   readonly onOpenStateChange?: (change: AssetWorkbenchOpenStateChange) => void;
@@ -77,6 +78,7 @@ export function AssetWorkbenchHost({
   onRefresh,
   onReveal,
   onSelectAsset,
+  onOpenWorkbenchLocation,
   onOpenSettings,
   openAttempt = 0,
   onOpenStateChange,
@@ -406,6 +408,7 @@ export function AssetWorkbenchHost({
               onRefresh={onRefresh}
               onReveal={onReveal}
               onSelectAsset={onSelectAsset}
+              onOpenWorkbenchLocation={onOpenWorkbenchLocation}
               onOpenSettings={onOpenSettings}
               onInteractionChange={reportInteraction}
               onOpenExternal={openExternal}

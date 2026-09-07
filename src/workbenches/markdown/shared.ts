@@ -88,6 +88,8 @@ export type MarkdownWorkbenchPayload = {
   readonly lineEnding: MarkdownLineEnding;
   readonly hasByteOrderMark: boolean;
   readonly revision: string;
+  /** Monotonically increasing, asset-scoped in-memory document version. */
+  readonly documentVersion?: number;
   readonly state: MarkdownWorkbenchViewState;
   readonly recovery?: MarkdownRecoveryBootstrap;
 };
@@ -107,6 +109,7 @@ export type MarkdownWysiwygBufferPayload = {
 export type MarkdownBufferSyncResult = {
   readonly accepted: true;
   readonly dirty: boolean;
+  readonly documentVersion?: number;
 };
 
 export type MarkdownSaveResult = {
@@ -516,6 +519,8 @@ export function isMarkdownWorkbenchPayload(
     isMarkdownLineEnding(value.lineEnding) &&
     typeof value.hasByteOrderMark === 'boolean' &&
     isRequiredText(value.revision) &&
+    (value.documentVersion === undefined ||
+      isNonNegativeInteger(value.documentVersion)) &&
     isMarkdownWorkbenchViewState(value.state) &&
     (recovery === undefined ||
       (isRecord(recovery) &&
@@ -560,7 +565,9 @@ export function isMarkdownBufferSyncResult(
   return (
     isRecord(value) &&
     value.accepted === true &&
-    typeof value.dirty === 'boolean'
+    typeof value.dirty === 'boolean' &&
+    (value.documentVersion === undefined ||
+      isNonNegativeInteger(value.documentVersion))
   );
 }
 

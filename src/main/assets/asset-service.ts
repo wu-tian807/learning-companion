@@ -642,7 +642,7 @@ export class AssetService implements AssetServiceApi {
       });
       const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(asset.id, snapshot);
-      this.publishChanged(snapshot);
+      this.publishChanged(snapshot, 'created');
 
       return Object.freeze({
         asset: cloneAssetSnapshot(snapshot),
@@ -1106,10 +1106,14 @@ export class AssetService implements AssetServiceApi {
     }
   }
 
-  private publishChanged(snapshot: AssetSnapshot): void {
+  private publishChanged(
+    snapshot: AssetSnapshot,
+    change: 'created' | 'updated' = 'updated',
+  ): void {
     const event: AssetChangedEvent = Object.freeze({
       projectId: snapshot.projectId,
       asset: cloneAssetSnapshot(snapshot),
+      ...(change === 'created' ? { change } : {}),
     });
 
     for (const listener of this.listeners) {
