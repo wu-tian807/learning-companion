@@ -311,6 +311,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const documentVersionRef = useRef(payload?.documentVersion ?? 0);
   const nextDocumentUpdateIdRef = useRef(0);
   const pendingDocumentSyncsRef = useRef(0);
+  const syncConflictRef = useRef(false);
   const initialViewState =
     payload?.state ??
     ({
@@ -384,8 +385,18 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         return;
       }
       if (pendingDocumentSyncsRef.current > 0) {
+        syncConflictRef.current = true;
         setSyncConflict(
           '另一视口已修改此 Markdown；当前草稿已保留，请先处理冲突后再保存。',
+        );
+        return;
+      }
+      // A rejected local version is a persistent conflict, not a transient
+      // pending request. Keep the draft intact across every later peer event.
+      if (syncConflictRef.current) {
+        documentVersionRef.current = Math.max(
+          documentVersionRef.current,
+          change.documentVersion,
         );
         return;
       }
@@ -647,6 +658,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           );
         }
         return accepted;
+      } catch (error) {
+        syncConflictRef.current = true;
+        setSyncConflict('本地草稿与另一视口冲突，草稿已保留。请保存或手动处理后继续。');
+        throw error;
       } finally {
         pendingDocumentSyncsRef.current -= 1;
       }
@@ -675,6 +690,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           );
         }
         return accepted;
+      } catch (error) {
+        syncConflictRef.current = true;
+        setSyncConflict('本地草稿与另一视口冲突，草稿已保留。请保存或手动处理后继续。');
+        throw error;
       } finally {
         pendingDocumentSyncsRef.current -= 1;
       }
