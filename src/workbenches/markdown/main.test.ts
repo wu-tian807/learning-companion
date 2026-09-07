@@ -33,6 +33,9 @@ import {
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
+  isMarkdownAdoptSharedPayload,
+  isMarkdownReadConflictStateResult,
+  isMarkdownResolveConflictPayload,
   isMarkdownWorkbenchPayload,
   MARKDOWN_RECOVERY_DATA_KEY,
   MARKDOWN_STATE_SCHEMA_VERSION,
@@ -141,6 +144,90 @@ const source: ResolvedTextContent = {
 const sourceViewState = { anchor: 1, head: 3, scrollTop: 12 };
 
 describe('MarkdownWorkbenchProvider', () => {
+  it('treats a future document version as invalid IPC without locking the writer', async () => {
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(), new MemoryDataDatabase(),
+    );
+    const { handle } = createHandle(source);
+    const context = createContext('session', handle);
+    await provider.open(context);
+    await provider.command(context, createMarkdownSyncSourceCommand({
+      content: '# first\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 0, updateId: 1,
+    }));
+
+    await expect(provider.command(context, createMarkdownSyncSourceCommand({
+      content: '# malformed\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 99, updateId: 2,
+    }))).rejects.toThrow('INVALID_IPC_REQUEST');
+
+    await expect(provider.command(context, createMarkdownSyncSourceCommand({
+      content: '# still editable\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 1, updateId: 3,
+    }))).resolves.toMatchObject({ payload: { accepted: true } });
+  });
+
+  it('releases every conflict owned by one session while retaining the backups', async () => {
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(), new MemoryDataDatabase(),
+    );
+    const { handle } = createHandle(source);
+    const first = createContext('first', handle);
+    const second = createContext('second', handle);
+    await provider.open(first);
+    await provider.open(second);
+    await provider.command(first, createMarkdownSyncSourceCommand({
+      content: '# shared\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 0, updateId: 1,
+    }));
+    for (const content of ['# rejected one\n', '# rejected two\n']) {
+      await expect(provider.command(second, createMarkdownSyncSourceCommand({
+        content, lineEnding: 'lf', sourceViewState,
+        baseDocumentVersion: 0, updateId: 1,
+      }))).rejects.toThrow('CONTENT_HAS_UNSAVED_CHANGES');
+    }
+    const state = await provider.command(second, {
+      type: markdownCommands.readConflictState,
+    });
+    expect(isMarkdownReadConflictStateResult(state.payload)).toBe(true);
+    const conflicts = (state.payload as { conflicts: readonly { conflictId: string }[] }).conflicts;
+    expect(conflicts).toHaveLength(2);
+    await expect(provider.command(first, {
+      type: markdownCommands.adoptShared,
+      payload: { conflictId: conflicts[0]!.conflictId },
+    })).rejects.toThrow('INVALID_IPC_REQUEST');
+    await provider.command(second, {
+      type: markdownCommands.adoptShared,
+      payload: { conflictId: conflicts[0]!.conflictId },
+    });
+
+    await expect(provider.command(second, createMarkdownSyncSourceCommand({
+      content: '# resumed\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 1, updateId: 2,
+    }))).resolves.toMatchObject({ payload: { accepted: true } });
+    const after = await provider.command(second, {
+      type: markdownCommands.readConflictState,
+    });
+    expect((after.payload as { conflicts: unknown[] }).conflicts).toHaveLength(2);
+  });
+
+  it('validates the closed conflict command and result protocol', () => {
+    expect(isMarkdownResolveConflictPayload({
+      conflictId: 'conflict', expectedDocumentVersion: 1, content: 'merged',
+    })).toBe(true);
+    expect(isMarkdownResolveConflictPayload({
+      conflictId: 'conflict', expectedDocumentVersion: Number.NaN, content: 'merged',
+    })).toBe(false);
+    expect(isMarkdownAdoptSharedPayload({ conflictId: 'conflict', extra: true })).toBe(false);
+    expect(isMarkdownReadConflictStateResult({
+      sharedContent: 'shared', documentVersion: 1,
+      conflicts: [{ conflictId: 'missing', unavailable: true, baseRevision: 'r1', sharedDocumentVersion: 0 }],
+    })).toBe(true);
+    expect(isMarkdownReadConflictStateResult({
+      sharedContent: 'shared', documentVersion: -1, conflicts: [],
+    })).toBe(false);
+  });
+
   it('opens disk source with the default Markdown state', async () => {
     const provider = new MarkdownWorkbenchProvider(
       new MemoryStateDatabase(),
@@ -305,7 +392,7 @@ describe('MarkdownWorkbenchProvider', () => {
           updateId: 1,
         }),
       ),
-    ).rejects.toMatchObject({ code: 'CONTENT_HAS_UNSAVED_CHANGES' });
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
   });
 
   it('serializes simultaneous saves from two Markdown sessions into one write', async () => {

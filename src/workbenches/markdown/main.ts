@@ -47,6 +47,9 @@ import {
   MARKDOWN_MAX_IMAGE_BYTES,
   isMarkdownInsertImagePayload,
   isMarkdownReadImagePayload,
+  isMarkdownResolveConflictPayload,
+  isMarkdownAdoptSharedPayload,
+  isMarkdownReadConflictStateResult,
   markdownCommands,
   markdownWorkbenchManifest,
   markdownImageExtensionFromMediaType,
@@ -55,6 +58,7 @@ import {
   type MarkdownLineEnding,
   type MarkdownRecoveryState,
   type MarkdownConflictRecoveryState,
+  type MarkdownReadConflictStateResult,
   type MarkdownWorkbenchStateV1,
   type MarkdownWorkbenchViewState,
 } from './shared';
@@ -356,14 +360,13 @@ export class MarkdownWorkbenchProvider
         return this.createSyncResult(runtime);
       }
       case markdownCommands.readConflictState: {
-        return createResult(await this.readConflictState(document));
+        return this.createConflictStateResult(await this.readConflictState(document));
       }
       case markdownCommands.resolveConflict: {
-        const payload = command.payload as Record<string, unknown> | undefined;
-        if (!payload || typeof payload.conflictId !== 'string' ||
-          typeof payload.expectedDocumentVersion !== 'number' ||
-          typeof payload.content !== 'string') throw new AppError('INVALID_IPC_REQUEST');
-        if (!document.conflictRecoveries.some((item) => item.conflictId === payload.conflictId)) {
+        if (!isMarkdownResolveConflictPayload(command.payload)) throw new AppError('INVALID_IPC_REQUEST');
+        const payload = command.payload;
+        if (!runtime.conflictIds.has(payload.conflictId) ||
+          !document.conflictRecoveries.some((item) => item.conflictId === payload.conflictId)) {
           throw new AppError('INVALID_IPC_REQUEST');
         }
         if (payload.expectedDocumentVersion !== document.documentVersion) {
@@ -379,18 +382,22 @@ export class MarkdownWorkbenchProvider
         document.documentVersion += 1;
         document.lastWriterSessionId = undefined;
         document.lastWriterUpdateId = 0;
-        runtime.conflictIds.delete(payload.conflictId);
+        runtime.conflictIds.clear();
         this.publishDocumentChange(document);
-        return createResult(await this.readConflictState(document));
+        await this.scheduleRecovery(document, runtime.viewState);
+        return this.createConflictStateResult(await this.readConflictState(document));
       }
       case markdownCommands.adoptShared: {
-        const payload = command.payload as Record<string, unknown> | undefined;
-        if (!payload || typeof payload.conflictId !== 'string' ||
+        if (!isMarkdownAdoptSharedPayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        const payload = command.payload;
+        if (!runtime.conflictIds.has(payload.conflictId) ||
           !document.conflictRecoveries.some((item) => item.conflictId === payload.conflictId)) {
           throw new AppError('INVALID_IPC_REQUEST');
         }
-        runtime.conflictIds.delete(payload.conflictId);
-        return createResult(await this.readConflictState(document));
+        runtime.conflictIds.clear();
+        return this.createConflictStateResult(await this.readConflictState(document));
       }
       case markdownCommands.backup: {
         if (command.payload !== undefined) {
@@ -405,6 +412,11 @@ export class MarkdownWorkbenchProvider
       case markdownCommands.save: {
         if (command.payload !== undefined) {
           throw new AppError('INVALID_IPC_REQUEST');
+        }
+        // A viewport with a rejected optimistic write must resolve or adopt
+        // explicitly. Other viewports of the same document remain free to save.
+        if (runtime.conflictIds.size > 0) {
+          throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
         }
 
         try {
@@ -661,6 +673,14 @@ export class MarkdownWorkbenchProvider
     updateId: number | undefined,
   ): Promise<void> {
     const document = runtime.document;
+    // A client cannot name a document revision the Main process has never
+    // issued. This is malformed IPC, not a collaborative editing conflict.
+    if (
+      baseDocumentVersion !== undefined &&
+      baseDocumentVersion > document.documentVersion
+    ) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
     if (runtime.conflictIds.size > 0) {
       await this.persistConflictRecovery(runtime, content, lineEnding, editedFrom);
       throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
@@ -744,12 +764,21 @@ export class MarkdownWorkbenchProvider
     });
   }
 
-  private async readConflictState(document: MarkdownDocumentRuntime) {
+  private async readConflictState(
+    document: MarkdownDocumentRuntime,
+  ): Promise<MarkdownReadConflictStateResult> {
     const backups = await Promise.all(document.conflictRecoveries.map(async (item) => {
       const data = await this.dataDatabase.get(
         document.assetId, MARKDOWN_WORKBENCH_ID, item.dataKey,
       );
-      if (!data) return undefined;
+      if (!data) {
+        return {
+          conflictId: item.conflictId,
+          unavailable: true as const,
+          baseRevision: item.baseRevision,
+          sharedDocumentVersion: item.sharedDocumentVersion,
+        };
+      }
       try {
         return {
           conflictId: item.conflictId,
@@ -758,14 +787,30 @@ export class MarkdownWorkbenchProvider
           sharedDocumentVersion: item.sharedDocumentVersion,
         };
       } catch {
-        return undefined;
+        return {
+          conflictId: item.conflictId,
+          unavailable: true as const,
+          baseRevision: item.baseRevision,
+          sharedDocumentVersion: item.sharedDocumentVersion,
+        };
       }
     }));
     return {
       sharedContent: document.workingBuffer,
       documentVersion: document.documentVersion,
-      conflicts: backups.filter((value): value is NonNullable<typeof value> => value !== undefined),
+      conflicts: backups,
     };
+  }
+
+  private createConflictStateResult(
+    state: MarkdownReadConflictStateResult,
+  ): WorkbenchCommandResult {
+    // Keep the Main and Renderer contract closed: malformed state must not
+    // become a loosely typed command response.
+    if (!isMarkdownReadConflictStateResult(state)) {
+      throw new AppError('DATA_INTEGRITY_ERROR');
+    }
+    return createResult(state);
   }
 
   private validateCommand(
@@ -791,7 +836,14 @@ export class MarkdownWorkbenchProvider
         }
         return;
       case markdownCommands.resolveConflict:
+        if (!isMarkdownResolveConflictPayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        return;
       case markdownCommands.adoptShared:
+        if (!isMarkdownAdoptSharedPayload(command.payload)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
         return;
       case markdownCommands.saveViewState:
         if (!isMarkdownWorkbenchViewStatePayload(command.payload)) {
