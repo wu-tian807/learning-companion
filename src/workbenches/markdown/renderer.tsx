@@ -391,15 +391,6 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         );
         return;
       }
-      // A rejected local version is a persistent conflict, not a transient
-      // pending request. Keep the draft intact across every later peer event.
-      if (syncConflictRef.current) {
-        documentVersionRef.current = Math.max(
-          documentVersionRef.current,
-          change.documentVersion,
-        );
-        return;
-      }
       const change = event.payload as Readonly<Record<string, unknown>>;
       if (
         typeof change.content !== 'string' ||
@@ -412,6 +403,15 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         !Number.isSafeInteger(change.documentVersion) ||
         change.documentVersion <= documentVersionRef.current
       ) {
+        return;
+      }
+      // A rejected local version is a persistent conflict, not a transient
+      // pending request. Keep the draft intact across every later peer event.
+      if (syncConflictRef.current) {
+        documentVersionRef.current = Math.max(
+          documentVersionRef.current,
+          change.documentVersion,
+        );
         return;
       }
       // Never remount an editor for a peer update: that loses undo/IME and
