@@ -17,6 +17,8 @@ export interface AssetInput {
 }
 
 export interface CreateAssetInput {
+  /** Optional only for durable, system-owned recovery operations. */
+  readonly id?: string;
   readonly name: string;
   readonly mediaType: string;
   readonly creationKind: AssetCreationKind;

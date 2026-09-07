@@ -38,32 +38,24 @@ vi.mock('../workbench/host/AssetWorkbenchHost', () => ({
   AssetWorkbenchHost: () => <div data-testid="workbench" />,
 }));
 
-vi.mock('../workbench/host/workbench-target-bridge', () => ({
-  selectAndRevealWorkbenchTarget: projectPageHarness.selectAndReveal,
-}));
-
 vi.mock('./ProjectAssetPanel', () => ({
   ProjectAssetPanel: () => <div data-testid="assets" />,
 }));
 
-vi.mock('./ProjectLearningNotePanel', () => ({
-  ProjectLearningNotePanel: ({
+vi.mock('./ProjectNotebookPanel', () => ({
+  ProjectNotebookPanel: ({
     active,
-    onRevealReference,
+    onSelectMaterialAsset,
   }: {
     active: boolean;
-    onRevealReference: (link: unknown) => Promise<void>;
+    onSelectMaterialAsset: (assetId: string) => Promise<void>;
   }) => (
-    <div data-testid="learning-note-panel" data-active={String(active)}>
+    <div data-testid="notebook-panel" data-active={String(active)}>
       <button
         type="button"
-        onClick={() => void onRevealReference({
-          projectId: 'project-1',
-          assetId: 'asset-html',
-          attachmentId: 'attachment-1',
-        })}
+        onClick={() => void onSelectMaterialAsset('asset-html')}
       >
-        定位笔记引用
+        打开普通资料
       </button>
     </div>
   ),
@@ -123,18 +115,6 @@ describe('ProjectPage Project conversation lifecycle', () => {
         listProjectConversations: vi.fn(async () => []),
         saveProjectConversation: vi.fn(async () => []),
         deleteProjectConversation: vi.fn(async () => []),
-        getProjectLearningNote: vi.fn(async ({ projectId }) => ({
-          projectId,
-          markdown: '',
-          revision: 0,
-          updatedTime: null,
-        })),
-        saveProjectLearningNote: vi.fn(async (request) => ({
-          projectId: request.projectId,
-          markdown: request.markdown,
-          revision: request.expectedRevision + 1,
-          updatedTime: 1,
-        })),
         listAttachments: vi.fn(async () => [{
           id: 'attachment-1',
           projectId: 'project-1',
@@ -223,20 +203,15 @@ describe('ProjectPage Project conversation lifecycle', () => {
     );
     await act(async () => openButton?.click());
     expect(
-      container.querySelector('[data-testid="learning-note-panel"]')
+      container.querySelector('[data-testid="notebook-panel"]')
         ?.getAttribute('data-active'),
     ).toBe('true');
 
-    const collapseButton = container.querySelector<HTMLButtonElement>(
-      'button[aria-label="收起学习笔记"]',
-    );
-    await act(async () => collapseButton?.click());
-    expect(
-      container.querySelector('[data-testid="learning-note-panel"]'),
-    ).toBeNull();
+    await act(async () => openButton?.click());
+    expect(container.querySelector('[data-testid="notebook-panel"]')).toBeNull();
   });
 
-  it('routes a learning-note link through Asset selection and Workbench reveal', async () => {
+  it('keeps the notebook viewport while it opens a referenced normal Asset', async () => {
     await act(async () => {
       root.render(
         <ProjectPage
@@ -248,22 +223,14 @@ describe('ProjectPage Project conversation lifecycle', () => {
     });
 
     const navigate = Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent === '定位笔记引用',
+      (button) => button.textContent === '打开普通资料',
     );
     await act(async () => navigate?.click());
 
-    expect(projectPageHarness.selectAndReveal).toHaveBeenCalledWith(
-      expect.objectContaining({
-        assetId: 'asset-html',
-        target: {
-          scope: 'content',
-          targetType: 'html.range',
-          targetVersion: 1,
-          targetPayload: { path: 'p:1' },
-        },
-        selectAsset: projectPageHarness.selectAsset,
-        emphasize: true,
-      }),
-    );
+    expect(projectPageHarness.selectAsset).toHaveBeenCalledWith('asset-html');
+    expect(
+      container.querySelector('[data-testid="notebook-panel"]')
+        ?.getAttribute('data-active'),
+    ).toBe('false');
   });
 });

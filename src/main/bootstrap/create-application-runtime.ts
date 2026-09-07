@@ -31,6 +31,8 @@ import { ProjectConversationDatabase } from '../conversation/project-conversatio
 import { ProjectConversationService } from '../conversation/project-conversation-service';
 import { ProjectLearningNoteDatabase } from '../project-learning-notes/project-learning-note-database';
 import { ProjectLearningNoteService } from '../project-learning-notes/project-learning-note-service';
+import { ProjectNotebookAssetDatabase } from '../project-notebook-assets/project-notebook-asset-database';
+import { ProjectNotebookAssetService } from '../project-notebook-assets/project-notebook-asset-service';
 import {
   registerContentProtocol,
   removeContentProtocol,
@@ -234,6 +236,12 @@ export async function createApplicationRuntime({
         deletionObserver: associationService,
       },
     );
+    const projectNotebookAssetService = new ProjectNotebookAssetService(
+      new ProjectNotebookAssetDatabase(databaseContext),
+      projectLearningNoteService,
+      assetService,
+      projectDatabase,
+    );
     disposeAssetAggregateTracking = trackAssetAggregateMutations(
       assetService,
       createAssetAggregateMutationSources({
@@ -363,6 +371,7 @@ export async function createApplicationRuntime({
       projectService,
       projectConversationService,
       projectLearningNoteService,
+      projectNotebookAssetService,
       workbenchActions,
       settingsRepository,
       workbenchSessionService,

@@ -10,6 +10,7 @@ import {
   type Asset,
   type AssetSnapshot,
   type LocalAssetImportMode,
+  PROJECT_WORKSPACE_CONTENT_BASE,
 } from '../../shared/assets';
 import {
   LOCAL_FILE_CONTENT_KIND,
@@ -79,6 +80,8 @@ export interface AssetServiceApi {
   createMarkdownNote(
     projectId: string,
     name?: string,
+    initialMarkdown?: string,
+    options?: MarkdownNoteCreationOptions,
   ): Promise<AssetSnapshot>;
   update(
     assetId: string,
@@ -136,10 +139,17 @@ export interface AssetServiceUpdateOptions {
 }
 
 export interface StageGeneratedAssetFileInput {
+  /** Reserved Asset identity for a persisted recovery operation. */
+  readonly assetId?: string;
   readonly fileName: string;
   readonly name: string;
   readonly mediaType: string;
   readonly content: Uint8Array;
+}
+
+export interface MarkdownNoteCreationOptions {
+  /** Use only when a Project-owned migration has persisted this operation id. */
+  readonly assetId?: string;
 }
 
 export interface StagedGeneratedAsset {
@@ -572,6 +582,11 @@ export class AssetService implements AssetServiceApi {
         ) {
           throw new AppError('DATA_INTEGRITY_ERROR');
         }
+        if (input.assetId && existing.id !== input.assetId) {
+          throw new Error(
+            '笔记迁移操作已指向另一份资料，已停止恢复以避免覆盖。',
+          );
+        }
 
         return Object.freeze({
           asset: cloneAssetSnapshot(existing),
@@ -593,6 +608,22 @@ export class AssetService implements AssetServiceApi {
         throw new AppError('ASSET_UNAVAILABLE');
       }
 
+      if (input.assetId && !generated.created) {
+        const persisted = await resolved.handle?.readBytes?.();
+        const isManagedExpectedFile =
+          generated.contentRef.base === PROJECT_WORKSPACE_CONTENT_BASE &&
+          isSameContentRef(resolved.contentRef, generated.contentRef);
+        const matchesExpectedBody =
+          persisted !== undefined &&
+          persisted.content.byteLength === input.content.byteLength &&
+          persisted.content.every((byte, index) => byte === input.content[index]);
+        if (!isManagedExpectedFile || !matchesExpectedBody) {
+          throw new Error(
+            '笔记迁移文件与待恢复内容不一致，已停止恢复以避免覆盖。',
+          );
+        }
+      }
+
       const detectedMediaType = await this.dependencies.detectMediaType(
         resolved.location.absolutePath,
       );
@@ -603,6 +634,7 @@ export class AssetService implements AssetServiceApi {
       }
 
       const asset = this.assetDatabase.add(projectId, {
+        ...(input.assetId ? { id: input.assetId } : {}),
         name: input.name,
         mediaType: input.mediaType,
         creationKind: 'generated',
@@ -639,21 +671,30 @@ export class AssetService implements AssetServiceApi {
   async createMarkdownNote(
     projectId: string,
     name = '新建笔记',
+    initialMarkdown = '',
+    options: MarkdownNoteCreationOptions = {},
   ): Promise<AssetSnapshot> {
     const normalizedName = name.trim();
     // The display name may intentionally duplicate another note.  The managed
     // filename must not: generated storage is an implementation detail and
     // receives an opaque id rather than using user-controlled text.
-    if (!normalizedName || [...normalizedName].length > 160) {
+    if (
+      !normalizedName ||
+      [...normalizedName].length > 160 ||
+      typeof initialMarkdown !== 'string'
+    ) {
       throw new AppError('INVALID_IPC_REQUEST');
     }
     const staged = await this.stageGeneratedFile(projectId, {
-      fileName: `note-${randomUUID()}.md`,
+      fileName: options.assetId
+        ? `note-${options.assetId}.md`
+        : `note-${randomUUID()}.md`,
+      ...(options.assetId ? { assetId: options.assetId } : {}),
       name: normalizedName,
       mediaType: MARKDOWN_ASSET_MEDIA_TYPE,
-      content: new Uint8Array(),
+      content: new TextEncoder().encode(initialMarkdown),
     });
-    if (!staged.created) {
+    if (!staged.created && staged.asset.id !== options.assetId) {
       // UUID collisions are not a normal idempotency path.  Returning another
       // note would violate the new-note contract, so fail explicitly.
       throw new AppError('REGISTRATION_CONFLICT');

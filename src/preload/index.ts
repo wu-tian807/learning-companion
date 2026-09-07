@@ -46,6 +46,12 @@ import type {
   SaveProjectLearningNoteRequest,
 } from '../shared/project-learning-notes';
 import type {
+  CreateProjectNotebookRequest,
+  ProjectNotebookProjectRequest,
+  ProjectNotebookSnapshot,
+  SelectProjectNotebookAssetRequest,
+} from '../shared/project-notebook-assets';
+import type {
   CreateProjectRequest,
   ChangeProjectWorkspaceRequest,
   AgentProviderConnectionRequest,
@@ -273,6 +279,17 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
   saveProjectLearningNote: (request: SaveProjectLearningNoteRequest) =>
     invoke<ProjectLearningNoteSnapshot>(
       IPC_CHANNELS.saveProjectLearningNote,
+      request,
+    ),
+  getProjectNotebook: (request: ProjectNotebookProjectRequest) =>
+    invoke<ProjectNotebookSnapshot>(IPC_CHANNELS.getProjectNotebook, request),
+  createProjectNotebook: (request: CreateProjectNotebookRequest) =>
+    invoke<AssetSnapshot>(IPC_CHANNELS.createProjectNotebook, request),
+  selectProjectNotebookAsset: (
+    request: SelectProjectNotebookAssetRequest,
+  ) =>
+    invoke<ProjectNotebookSnapshot>(
+      IPC_CHANNELS.selectProjectNotebookAsset,
       request,
     ),
   selectLocalAssetFiles: (request: ProjectLifecycleRequest) =>

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
-import type { ProjectLearningNoteReferenceLink } from '../../shared/project-learning-notes';
 import { ErrorDialog } from '../components/ErrorDialog';
 import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
 import { createProjectConversationHistoryStore } from '../conversation/conversation-history-store';
@@ -14,14 +13,12 @@ import type { MindMapGenerationDraft } from '../generation/mind-map-generation-d
 import type { RendererGenerationToolResult } from '../generation/renderer-generation-tool';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
 import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
-import { selectAndRevealWorkbenchTarget } from '../workbench/host/workbench-target-bridge';
 import { WorkbenchOpenCoordinator } from '../workbench/workbench-open-coordinator';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
-import { ProjectLearningNotePanel } from './ProjectLearningNotePanel';
-import { resolveProjectLearningNoteReference } from './project-learning-note-navigation';
+import { ProjectNotebookPanel } from './ProjectNotebookPanel';
 import { ProjectRightPanelSlot } from './ProjectRightPanelSlot';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
@@ -31,7 +28,6 @@ import {
 } from './project-asset-view';
 import { useProjectAssets } from './use-project-assets';
 import { useProjectLayout } from './use-project-layout';
-import { useProjectLearningNote } from './use-project-learning-note';
 import { useProjectSession } from './use-project-session';
 import { useRelativeTimeNow } from './use-relative-time-now';
 
@@ -78,22 +74,16 @@ export function ProjectPage({
   const rightToggleRef = useRef<HTMLButtonElement>(null);
   const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
   const learningNoteToggleRef = useRef<HTMLButtonElement>(null);
-  const learningNoteNavigationRef = useRef<AbortController | undefined>(
-    undefined,
-  );
   const relativeTimeNow = useRelativeTimeNow();
   const layout = useProjectLayout();
   const {
     closeOverlays,
-    closeRight,
     openOverlay,
     openRight,
     toggleLeft,
     toggleRight,
   } = layout;
   const session = useProjectSession(project.id, setError);
-  const learningNote = useProjectLearningNote(project.id);
-  const flushLearningNote = learningNote.flush;
   const [workbenchOpenAttempt, setWorkbenchOpenAttempt] = useState(0);
   const workbenchOpening = useMemo(() => new WorkbenchOpenCoordinator(project.id), [project.id]);
   useEffect(() => () => workbenchOpening.dispose(), [workbenchOpening]);
@@ -230,66 +220,6 @@ export function ProjectPage({
     }
     session.selectAsset(assetId);
   }, [session]);
-  const revealLearningNoteReference = useCallback(
-    async (link: ProjectLearningNoteReferenceLink) => {
-      if (link.projectId !== project.id) {
-        throw new Error('这条资料引用不属于当前 Project。');
-      }
-      if (
-        session.loadState.kind !== 'ready' ||
-        !session.loadState.assets.some((asset) => asset.id === link.assetId)
-      ) {
-        throw new Error('引用的资料已不存在，无法定位原文。');
-      }
-
-      learningNoteNavigationRef.current?.abort(
-        new DOMException('已开始新的资料定位。', 'AbortError'),
-      );
-      const controller = new AbortController();
-      learningNoteNavigationRef.current = controller;
-      try {
-        const resolved = await resolveProjectLearningNoteReference(
-          project.id,
-          link,
-          window.learningCompanion.listAttachments,
-          controller.signal,
-        );
-        if (!layout.rightInline) {
-          closeRight();
-        }
-        await selectAndRevealWorkbenchTarget({
-          assetId: resolved.assetId,
-          target: resolved.target,
-          ...(resolved.sourceRevision
-            ? { sourceRevision: resolved.sourceRevision }
-            : {}),
-          selectAsset: session.selectAsset,
-          signal: controller.signal,
-          timeoutMs: 10_000,
-          emphasize: true,
-        });
-      } finally {
-        if (learningNoteNavigationRef.current === controller) {
-          learningNoteNavigationRef.current = undefined;
-        }
-      }
-    },
-    [
-      closeRight,
-      layout.rightInline,
-      project.id,
-      session.loadState,
-      session.selectAsset,
-    ],
-  );
-  useEffect(
-    () => () => {
-      learningNoteNavigationRef.current?.abort(
-        new DOMException('Project 已关闭。', 'AbortError'),
-      );
-    },
-    [],
-  );
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     if (layout.rightPanel === 'conversation') {
@@ -327,15 +257,10 @@ export function ProjectPage({
     if (conversationSnapshot.panelOpen) {
       dismissConversationPanel();
     }
-    if (layout.rightPanel === 'learning-note') {
-      void flushLearningNote().catch(() => undefined);
-    }
     toggleRight('learning-note');
   }, [
     conversationSnapshot.panelOpen,
     dismissConversationPanel,
-    layout.rightPanel,
-    flushLearningNote,
     toggleRight,
   ]);
   const toggleConversationPanel = useCallback(() => {
@@ -362,13 +287,6 @@ export function ProjectPage({
       aiQuestionToggleRef.current?.focus();
     });
   }, [dismissConversationPanel]);
-  const closeLearningNotePanel = useCallback(() => {
-    void flushLearningNote().catch(() => undefined);
-    closeRight();
-    window.requestAnimationFrame(() => {
-      learningNoteToggleRef.current?.focus();
-    });
-  }, [closeRight, flushLearningNote]);
   const closeOpenOverlay = useCallback(() => {
     const closingSide = openOverlay;
     const closingRightPanel = layout.rightPanel;
@@ -379,12 +297,6 @@ export function ProjectPage({
 
     if (closingSide === 'right' && closingRightPanel === 'conversation') {
       dismissConversationPanel();
-    }
-    if (
-      closingSide === 'right' &&
-      closingRightPanel === 'learning-note'
-    ) {
-      void flushLearningNote().catch(() => undefined);
     }
     closeOverlays();
     window.requestAnimationFrame(() => {
@@ -402,7 +314,6 @@ export function ProjectPage({
     closeOverlays,
     dismissConversationPanel,
     layout.rightPanel,
-    flushLearningNote,
     openOverlay,
   ]);
 
@@ -464,11 +375,7 @@ export function ProjectPage({
           <button
             type="button"
             aria-label="返回首页"
-            onClick={() => {
-              void flushLearningNote()
-                .catch(() => undefined)
-                .finally(onBack);
-            }}
+            onClick={onBack}
             className="ui-icon-button grid size-[30px] place-items-center rounded-[10px] border border-white/10 text-slate-400"
           >
             <BackIcon />
@@ -614,13 +521,18 @@ export function ProjectPage({
                   />
                 }
                 learningNote={
-                  <ProjectLearningNotePanel
+                  <ProjectNotebookPanel
                     active={layout.rightPanel === 'learning-note'}
+                    projectReady={session.loadState.kind === 'ready'}
                     projectId={project.id}
-                    selectedAsset={assetOperations.selectedAsset}
-                    controller={learningNote}
-                    onRevealReference={revealLearningNoteReference}
-                    onClose={closeLearningNotePanel}
+                    assets={
+                      session.loadState.kind === 'ready'
+                        ? session.loadState.assets
+                        : []
+                    }
+                    onSelectMaterialAsset={selectConversationAsset}
+                    onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
+                    onError={setError}
                   />
                 }
                 generation={

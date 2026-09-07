@@ -178,7 +178,7 @@ export class AssetDatabase
     const normalizedProjectId = requireId(projectId, 'projectId');
     const now = this.dependencies.now();
     const asset = createAssetSnapshot({
-      id: this.dependencies.createId(),
+      id: input.id ?? this.dependencies.createId(),
       projectId: normalizedProjectId,
       name: input.name,
       mediaType: input.mediaType,

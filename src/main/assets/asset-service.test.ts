@@ -69,7 +69,7 @@ function createDatabase(initialAssets: readonly Asset[] = [createAsset()]) {
     countByProjectIds: vi.fn(() => new Map([['project', assetMap.size]])),
     add: vi.fn((projectId: string, input) => {
       const asset = createAssetSnapshot({
-        id: 'created',
+        id: input.id ?? 'created',
         projectId,
         ...input,
         createdTime: Date.parse('2026-07-27T02:00:00.000Z'),
@@ -814,6 +814,53 @@ describe('AssetService', () => {
       expect.stringMatching(/^note-[0-9a-f-]+\.md$/u),
       new Uint8Array(),
     );
+  });
+
+  it('rejects a pre-existing migration file whose bytes do not match the persisted legacy body', async () => {
+    const database = createDatabase([]);
+    const registry = new ContentResolverRegistry();
+    registry.register({
+      kind: 'local-file',
+      resolve: async (ref) => ({
+        contentRef: ref,
+        contentStatus: createAssetContentStatus('available', SERVICE_NOW),
+        location: { kind: 'local-file', absolutePath: `/tmp/project/${ref.path}` },
+        handle: {
+          capabilities: new Set(['read-bytes']),
+          readBytes: async () => ({
+            content: new TextEncoder().encode('# different body\n'),
+            revision: 'unexpected',
+          }),
+          close: async () => undefined,
+        },
+      }),
+    });
+    const contentRef = createProjectWorkspaceContentRef(
+      '.learning-companion/assets/generated/note-operation-1.md',
+    );
+    const removeManagedAssetFile = vi.fn(async () => false);
+    const service = createService(
+      database,
+      registry,
+      { detectMediaType: vi.fn(async () => 'text/markdown') },
+      {
+        createGeneratedFile: vi.fn(async () => ({
+          contentRef,
+          absolutePath: '/tmp/project/.learning-companion/assets/generated/note-operation-1.md',
+          created: false,
+        })),
+        removeManagedAssetFile,
+      },
+    );
+    await service.loadFromProject('project');
+
+    await expect(
+      service.createMarkdownNote('project', '学习笔记', '# legacy\n', {
+        assetId: 'operation-1',
+      }),
+    ).rejects.toThrow('迁移文件与待恢复内容不一致');
+    expect(database.add).not.toHaveBeenCalled();
+    expect(removeManagedAssetFile).not.toHaveBeenCalled();
   });
 
   it('removes a newly materialized Markdown file when a Project switch supersedes creation', async () => {

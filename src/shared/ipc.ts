@@ -67,6 +67,12 @@ import type {
   ProjectLearningNoteSnapshot,
   SaveProjectLearningNoteRequest,
 } from './project-learning-notes';
+import type {
+  CreateProjectNotebookRequest,
+  ProjectNotebookProjectRequest,
+  ProjectNotebookSnapshot,
+  SelectProjectNotebookAssetRequest,
+} from './project-notebook-assets';
 
 export const IPC_CHANNELS = {
   healthCheck: "app:health-check",
@@ -113,6 +119,9 @@ export const IPC_CHANNELS = {
   deleteProjectConversation: "project-conversation:delete",
   getProjectLearningNote: 'project-learning-note:get',
   saveProjectLearningNote: 'project-learning-note:save',
+  getProjectNotebook: 'project-notebook:get',
+  createProjectNotebook: 'project-notebook:create',
+  selectProjectNotebookAsset: 'project-notebook:select-asset',
   selectLocalAssetFiles: "asset:select-local-files",
   addLocalAssets: "asset:add-local-files",
   renameAsset: "asset:rename",
@@ -249,6 +258,15 @@ export interface LearningCompanionApi {
   saveProjectLearningNote: (
     request: SaveProjectLearningNoteRequest,
   ) => Promise<ProjectLearningNoteSnapshot>;
+  getProjectNotebook: (
+    request: ProjectNotebookProjectRequest,
+  ) => Promise<ProjectNotebookSnapshot>;
+  createProjectNotebook: (
+    request: CreateProjectNotebookRequest,
+  ) => Promise<AssetSnapshot>;
+  selectProjectNotebookAsset: (
+    request: SelectProjectNotebookAssetRequest,
+  ) => Promise<ProjectNotebookSnapshot>;
   selectLocalAssetFiles: (
     request: ProjectLifecycleRequest,
   ) => Promise<string[]>;
