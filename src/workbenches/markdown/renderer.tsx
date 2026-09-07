@@ -485,7 +485,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     (text: string, target: AssetTarget) => {
       // The Target and revision are frozen in this same explicit operation.
       // A dirty in-memory buffer has no honest source revision to export.
-      if (dirty || !sourceRevision || target.scope !== 'content') {
+      if (
+        workingBufferRef.current !== diskSource ||
+        lineEndingRef.current !== savedLineEnding ||
+        !sourceRevision ||
+        target.scope !== 'content'
+      ) {
         throw new Error('请先保存 Markdown，再设为引用来源。');
       }
       publishWorkbenchLocationSnapshot(markdownWorkbenchManifest, {
@@ -505,7 +510,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       asset.id,
       asset.projectId,
       bootstrap.sessionId,
-      dirty,
+      diskSource,
+      savedLineEnding,
       sourceRevision,
     ],
   );
@@ -2168,7 +2174,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         hasSelection: () =>
           activeEditorActionAdapter.getState().canCopy,
         canCaptureLocationReference: () =>
-          !dirty && Boolean(sourceRevision),
+          workingBufferRef.current === diskSource &&
+          lineEndingRef.current === savedLineEnding &&
+          Boolean(sourceRevision),
         onAiExplain: (text, target) => {
           conversationRuntime.open({
             ownerId: conversationOwnerId,
