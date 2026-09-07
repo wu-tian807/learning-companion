@@ -231,6 +231,9 @@ export const markdownCommands = {
   reopenWithEncoding: 'markdown:reopen-with-encoding',
   discardRecovery: 'markdown:discard-recovery',
   backupConflict: 'markdown:backup-conflict',
+  readConflictState: 'markdown:read-conflict-state',
+  resolveConflict: 'markdown:resolve-conflict',
+  adoptShared: 'markdown:adopt-shared',
   insertImage: 'markdown:insert-image',
   readImage: 'markdown:read-image',
 } as const;

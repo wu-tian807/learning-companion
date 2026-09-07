@@ -353,6 +353,33 @@ export class MarkdownWorkbenchProvider
         await this.scheduleRecovery(document, runtime.viewState);
         return this.createSyncResult(runtime);
       }
+      case markdownCommands.readConflictState: {
+        return createResult(await this.readConflictState(document));
+      }
+      case markdownCommands.resolveConflict: {
+        const payload = command.payload as Record<string, unknown> | undefined;
+        if (!payload || typeof payload.conflictId !== 'string' ||
+          typeof payload.expectedDocumentVersion !== 'number' ||
+          typeof payload.content !== 'string') throw new AppError('INVALID_IPC_REQUEST');
+        if (!document.conflictRecoveries.some((item) => item.conflictId === payload.conflictId)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        if (payload.expectedDocumentVersion !== document.documentVersion) {
+          throw new AppError('CONTENT_HAS_UNSAVED_CHANGES');
+        }
+        document.workingBuffer = payload.content;
+        document.documentVersion += 1;
+        this.publishDocumentChange(document);
+        return createResult(await this.readConflictState(document));
+      }
+      case markdownCommands.adoptShared: {
+        const payload = command.payload as Record<string, unknown> | undefined;
+        if (!payload || typeof payload.conflictId !== 'string' ||
+          !document.conflictRecoveries.some((item) => item.conflictId === payload.conflictId)) {
+          throw new AppError('INVALID_IPC_REQUEST');
+        }
+        return createResult(await this.readConflictState(document));
+      }
       case markdownCommands.backup: {
         if (command.payload !== undefined) {
           throw new AppError('INVALID_IPC_REQUEST');
@@ -700,6 +727,30 @@ export class MarkdownWorkbenchProvider
     });
   }
 
+  private async readConflictState(document: MarkdownDocumentRuntime) {
+    const backups = await Promise.all(document.conflictRecoveries.map(async (item) => {
+      const data = await this.dataDatabase.get(
+        document.assetId, MARKDOWN_WORKBENCH_ID, item.dataKey,
+      );
+      if (!data) return undefined;
+      try {
+        return {
+          conflictId: item.conflictId,
+          content: new TextDecoder('utf-8', { fatal: true }).decode(data.data),
+          baseRevision: item.baseRevision,
+          sharedDocumentVersion: item.sharedDocumentVersion,
+        };
+      } catch {
+        return undefined;
+      }
+    }));
+    return {
+      sharedContent: document.workingBuffer,
+      documentVersion: document.documentVersion,
+      conflicts: backups.filter((value): value is NonNullable<typeof value> => value !== undefined),
+    };
+  }
+
   private validateCommand(
     command: Parameters<MainWorkbenchProvider['command']>[1],
   ): void {
@@ -717,9 +768,13 @@ export class MarkdownWorkbenchProvider
       case markdownCommands.backup:
       case markdownCommands.save:
       case markdownCommands.discardRecovery:
+      case markdownCommands.readConflictState:
         if (command.payload !== undefined) {
           throw new AppError('INVALID_IPC_REQUEST');
         }
+        return;
+      case markdownCommands.resolveConflict:
+      case markdownCommands.adoptShared:
         return;
       case markdownCommands.saveViewState:
         if (!isMarkdownWorkbenchViewStatePayload(command.payload)) {
@@ -1084,7 +1139,11 @@ export class MarkdownWorkbenchProvider
     state: MarkdownWorkbenchStateV1,
   ): Promise<MarkdownWorkbenchStateV1> {
     const nextState = cloneMarkdownWorkbenchViewState(state);
-    await this.clearRecovery(assetId, nextState);
+    await this.clearRecovery(
+      assetId,
+      nextState,
+      state.conflictRecoveries ?? [],
+    );
     return nextState;
   }
 
