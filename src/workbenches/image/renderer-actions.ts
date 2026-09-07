@@ -23,7 +23,10 @@ export interface ImageRendererActionsOptions {
 export function createImageRendererActions({
   ready,
   aiBusy = false,
-  canStartSelection = ready && !aiBusy,
+  // Region selection is local image state.  AI busy may disable the AI submit
+  // controls after selection, but must not prevent users replacing/capturing
+  // a target for a later reference, annotation or question.
+  canStartSelection = ready,
   explanationCount = 0,
   indexOpen = false,
   markersVisible = true,

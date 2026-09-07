@@ -1023,7 +1023,6 @@ export function ImageWorkbenchView({
   }, []);
   const canStartSelection =
     ready &&
-    !conversationBusy &&
     !selectionMode &&
     !selectedTarget &&
     !explanations.some(

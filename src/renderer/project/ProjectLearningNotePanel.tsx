@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import 'vditor/dist/index.css';
 
 import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetAttachment } from '../../shared/attachments/contracts';
