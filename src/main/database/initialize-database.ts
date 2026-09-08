@@ -34,6 +34,7 @@ import { addConversationExecutionContextMigration } from './migrations/0026-add-
 import { canonicalizeAssetTargetsMigration } from './migrations/0027-canonicalize-asset-targets';
 import { bindProjectConversationsToAssetsMigration } from './migrations/0028-bind-project-conversations-to-assets';
 import { createProjectNotebookAssetsMigration } from './migrations/0029-create-project-notebook-assets';
+import { finalizeProjectNotebookAssetsCompatibilityMigration } from './migrations/0030-finalize-project-notebook-assets-compatibility';
 import * as assetAttachmentSchema from './schema/asset-attachments';
 import * as assetArtifactSchema from './schema/asset-artifacts';
 import * as assetFolderSchema from './schema/asset-folders';
@@ -83,6 +84,7 @@ const migrations: readonly DatabaseMigration[] = [
   canonicalizeAssetTargetsMigration,
   bindProjectConversationsToAssetsMigration,
   createProjectNotebookAssetsMigration,
+  finalizeProjectNotebookAssetsCompatibilityMigration,
 ];
 const schema = {
   ...assetAttachmentSchema,
