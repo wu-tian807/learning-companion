@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -198,6 +198,48 @@ describe('ConversationPanelHost Project ownership', () => {
     expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value)
       .toBe('切换布局后仍应保留的草稿');
     expect(container.textContent).toContain('这是需要保留的引用内容。');
+    runtime.dispose();
+  });
+
+  it('does not remount surrounding Workbenches when the conversation opens or closes', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const mounted = vi.fn();
+    const unmounted = vi.fn();
+
+    function WorkbenchProbe() {
+      useEffect(() => {
+        mounted();
+        return unmounted;
+      }, []);
+      return <div data-testid="workbench-probe" />;
+    }
+
+    await act(async () => {
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelSessionHost
+            projectId="project-1"
+            historyStore={historyStore}
+            keepMounted
+          >
+            <WorkbenchProbe />
+          </ConversationPanelSessionHost>
+        </WorkbenchConversationRuntimeProvider>,
+      );
+    });
+    expect(mounted).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      runtime.open();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      runtime.close();
+      await Promise.resolve();
+    });
+
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(unmounted).not.toHaveBeenCalled();
     runtime.dispose();
   });
 
