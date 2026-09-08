@@ -120,6 +120,7 @@ export function ConversationPanelSessionHost({
 
   return (
     <ConversationSession
+      key={`${activeMode.id}:${snapshot.boundAssetId ?? ''}:${snapshot.panelOpen ? 'open' : 'closed'}`}
       projectId={projectId}
       historyStore={historyStore}
       open={snapshot.panelOpen}
