@@ -91,7 +91,7 @@ describe('AttachmentHost', () => {
     expect(html).not.toContain('文档标注');
   });
 
-  it('renders the boxed AI reply card at the original Target position', async () => {
+  it('keeps a boxed AI reply collapsed until its Target is clicked', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);
@@ -111,9 +111,18 @@ describe('AttachmentHost', () => {
     });
 
     const html = container.innerHTML;
-    expect(html).toContain('AI 回复');
-    expect(html).toContain('AI 回复内容');
-    expect(html).toContain('border-indigo-400/45');
+    expect(html).not.toContain('AI 回复内容');
+    const marker = container.querySelector<HTMLButtonElement>(
+      'button[title="解释这里"]',
+    );
+    expect(marker).not.toBeNull();
+
+    await act(async () => {
+      marker?.click();
+      await Promise.resolve();
+    });
+    expect(document.body.textContent).toContain('附着内容');
+    expect(document.body.textContent).toContain('AI 回复内容');
 
     act(() => root.unmount());
   });
@@ -152,7 +161,7 @@ describe('AttachmentHost', () => {
     act(() => root.unmount());
   });
 
-  it('shows a compact marker for text Targets and opens the reply card on click', async () => {
+  it('shows a compact marker for text Targets and opens full details on click', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);
@@ -171,7 +180,7 @@ describe('AttachmentHost', () => {
       await Promise.resolve();
     });
 
-    let html = container.innerHTML;
+    const html = container.innerHTML;
     expect(html).not.toContain('AI 回复内容');
     const marker = container.querySelector<HTMLButtonElement>(
       'button[aria-label="查看 AI 回复"]',
@@ -182,13 +191,13 @@ describe('AttachmentHost', () => {
       marker?.click();
       await Promise.resolve();
     });
-    html = container.innerHTML;
-    expect(html).toContain('AI 回复内容');
+    expect(document.body.textContent).toContain('附着内容');
+    expect(document.body.textContent).toContain('AI 回复内容');
 
     act(() => root.unmount());
   });
 
-  it('hides and shows all markers with the visibility toggle', async () => {
+  it('does not render a duplicate bottom-right annotation toggle', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);
@@ -207,36 +216,17 @@ describe('AttachmentHost', () => {
       await Promise.resolve();
     });
 
-    let html = container.innerHTML;
-    expect(html).toContain('批注 1');
-
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(
-          'button[aria-label="隐藏原文批注标记"]',
-        )
-        ?.click();
-      await Promise.resolve();
-    });
-    html = container.innerHTML;
-    expect(html).toContain('批注已隐藏');
-    expect(html).not.toContain('批注 1');
-
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>(
-          'button[aria-label="显示原文批注标记"]',
-        )
-        ?.click();
-      await Promise.resolve();
-    });
-    html = container.innerHTML;
-    expect(html).toContain('批注 1');
+    expect(
+      container.querySelector(
+        'button[aria-label="隐藏原文批注标记"]',
+      ),
+    ).toBeNull();
+    expect(container.innerHTML).not.toContain('批注已隐藏');
 
     act(() => root.unmount());
   });
 
-  it('lets users choose which AI reply to view at one shared Target', async () => {
+  it('opens the latest full attachment directly at one shared Target', async () => {
     const container = document.createElement('div');
     containers.push(container);
     document.body.appendChild(container);
@@ -249,12 +239,6 @@ describe('AttachmentHost', () => {
             : '第一次的回复内容',
       }),
     );
-    const options = () =>
-      Array.from(
-        container.querySelectorAll<HTMLButtonElement>(
-          'button[role="option"]',
-        ),
-      );
     const root = createRoot(container);
     await act(async () => {
       root.render(
@@ -270,8 +254,7 @@ describe('AttachmentHost', () => {
       await Promise.resolve();
     });
 
-    let html = container.innerHTML;
-    expect(html).not.toContain('第一次的回复内容');
+    expect(document.body.textContent).not.toContain('第一次的回复内容');
     const marker = container.querySelector<HTMLButtonElement>(
       'button[title*="点击选择"]',
     );
@@ -281,36 +264,9 @@ describe('AttachmentHost', () => {
       marker?.click();
       await Promise.resolve();
     });
-    html = container.innerHTML;
-    expect(html).toContain('选择 AI 回复（2）');
-    expect(html).toContain('解释这里');
-    expect(html).toContain('第二次提问');
-
-    await act(async () => {
-      options()
-        .find((button) => button.textContent?.includes('第二次提问'))
-        ?.click();
-      await Promise.resolve();
-    });
-    html = container.innerHTML;
-    expect(html).toContain('第二次的回复内容');
-    expect(html).not.toContain('第一次的回复内容');
-
-    await act(async () => {
-      container
-        .querySelector<HTMLButtonElement>('button[title*="点击选择"]')
-        ?.click();
-      await Promise.resolve();
-    });
-    await act(async () => {
-      options()
-        .find((button) => button.textContent?.includes('解释这里'))
-        ?.click();
-      await Promise.resolve();
-    });
-    html = container.innerHTML;
-    expect(html).toContain('第一次的回复内容');
-    expect(html).not.toContain('第二次的回复内容');
+    expect(document.body.textContent).toContain('附着内容');
+    expect(document.body.textContent).toContain('第二次的回复内容');
+    expect(document.body.textContent).not.toContain('选择 AI 回复（2）');
 
     act(() => root.unmount());
   });

@@ -8,6 +8,7 @@ import {
 } from '../../shared/assets';
 import {
   PDF_PAGE_ANCHOR_TYPE,
+  PDF_REGION_ANCHOR_TYPE,
 } from '../pdf/shared';
 import {
   OFFICE_PAGE_ANCHOR_TYPE,
@@ -15,6 +16,7 @@ import {
 } from './shared';
 import {
   mapOfficePreviewInteraction,
+  mapOfficeTargetToPdf,
   OfficeWorkbenchView,
 } from './renderer';
 
@@ -91,5 +93,22 @@ describe('OfficeWorkbenchView', () => {
         targetPayload: { pageNumber: 2 },
       },
     });
+  });
+
+  it('keeps legacy PDF preview Targets so existing Office attachments remain visible', () => {
+    const legacyTarget = {
+      scope: 'content' as const,
+      targetType: PDF_REGION_ANCHOR_TYPE,
+      targetVersion: 1,
+      targetPayload: {
+        pageNumber: 5,
+        x: 0.1,
+        y: 0.2,
+        width: 0.3,
+        height: 0.4,
+      },
+    };
+
+    expect(mapOfficeTargetToPdf(legacyTarget)).toEqual(legacyTarget);
   });
 });
