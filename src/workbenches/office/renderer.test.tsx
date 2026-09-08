@@ -16,6 +16,7 @@ import {
 } from './shared';
 import {
   mapOfficePreviewInteraction,
+  mapOfficePreviewTarget,
   mapOfficeTargetToPdf,
   OfficeWorkbenchView,
 } from './renderer';
@@ -110,5 +111,6 @@ describe('OfficeWorkbenchView', () => {
     };
 
     expect(mapOfficeTargetToPdf(legacyTarget)).toEqual(legacyTarget);
+    expect(mapOfficePreviewTarget(legacyTarget)).toEqual(legacyTarget);
   });
 });

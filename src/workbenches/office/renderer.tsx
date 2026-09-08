@@ -11,6 +11,7 @@ import type {
   RendererWorkbenchViewProps,
 } from '../../renderer/workbench/renderer-workbench-registry';
 import type {
+  AssetTarget,
   ContentAssetTarget,
 } from '../../shared/workbench/asset-target';
 import type {
@@ -104,6 +105,12 @@ export function mapOfficeTargetToPdf(
     return { ...target, targetType: PDF_REGION_ANCHOR_TYPE, targetVersion: 1 };
   }
   return undefined;
+}
+
+export function mapOfficePreviewTarget(
+  target: AssetTarget,
+): AssetTarget | undefined {
+  return target.scope === 'content' ? mapOfficeTargetToPdf(target) : target;
 }
 
 export function mapOfficePreviewInteraction(
@@ -203,9 +210,7 @@ function OfficePdfPreview({
         }
         isSaveViewStateResult={isOfficeSaveViewStateResult}
         mapInteraction={mapOfficePreviewInteraction}
-        mapTarget={(target) =>
-          target.scope === 'content' ? mapOfficeTargetToPdf(target) : target
-        }
+        mapTarget={mapOfficePreviewTarget}
       />
     </DocumentAiWorkbenchShell>
   );

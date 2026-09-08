@@ -492,6 +492,8 @@ interface PdfDocumentWorkbenchViewProps
   readonly mapTarget?: (target: AssetTarget) => AssetTarget | undefined;
 }
 
+const identityPdfTarget = (target: AssetTarget): AssetTarget => target;
+
 export function PdfDocumentWorkbenchView({
   asset,
   bootstrap,
@@ -508,7 +510,7 @@ export function PdfDocumentWorkbenchView({
     createPdfSaveViewStateCommand,
   isSaveViewStateResult = isPdfSaveViewStateResult,
   mapInteraction = identityInteraction,
-  mapTarget = (target) => target,
+  mapTarget = identityPdfTarget,
 }: PdfDocumentWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isPdfWorkbenchPayload(bootstrap.payload)
