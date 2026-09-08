@@ -70,6 +70,7 @@ import type {
   LearningCompanionApi,
   OpenExternalRequest,
   ProjectLifecycleRequest,
+  ProjectRuntimeSessionRequest,
   SelectProjectWorkspaceRequest,
   RelinkAssetRequest,
   RenameAssetRequest,
@@ -231,9 +232,9 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     invoke<ProjectSnapshot>(IPC_CHANNELS.setProjectPinned, request),
   deleteProject: (request: DeleteProjectRequest) =>
     invoke<void>(IPC_CHANNELS.deleteProject, request),
-  openProject: (request: ProjectLifecycleRequest) =>
+  openProject: (request: ProjectRuntimeSessionRequest) =>
     invoke<AssetSnapshot[]>(IPC_CHANNELS.openProject, request),
-  closeProject: (request: ProjectLifecycleRequest) =>
+  closeProject: (request: ProjectRuntimeSessionRequest) =>
     invoke<void>(IPC_CHANNELS.closeProject, request),
   invokeWorkbenchAction: (request: WorkbenchActionRequest) =>
     invoke<JsonValue>(IPC_CHANNELS.invokeWorkbenchAction, request),

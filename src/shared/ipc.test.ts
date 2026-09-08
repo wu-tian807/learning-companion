@@ -23,6 +23,7 @@ import {
   isHealthCheckResponse,
   isOpenExternalRequest,
   isProjectLifecycleRequest,
+  isProjectRuntimeSessionRequest,
   isRelinkAssetRequest,
   isRenameAssetRequest,
   isRenameProjectRequest,
@@ -188,6 +189,12 @@ describe("Asset contracts", () => {
   it("accepts Asset requests", () => {
     expect(isProjectLifecycleRequest({ projectId: "project" })).toBe(true);
     expect(
+      isProjectRuntimeSessionRequest({
+        projectId: "project",
+        sessionId: "renderer-page-1",
+      }),
+    ).toBe(true);
+    expect(
       isAddLocalAssetsRequest({
         projectId: "project",
         paths: ["/tmp/a.md", "/tmp/b.pdf"],
@@ -228,6 +235,9 @@ describe("Asset contracts", () => {
 
   it("rejects malformed Asset requests", () => {
     expect(isProjectLifecycleRequest({ projectId: "" })).toBe(false);
+    expect(
+      isProjectRuntimeSessionRequest({ projectId: "project", sessionId: "" }),
+    ).toBe(false);
     expect(isAddLocalAssetsRequest({ projectId: "project", paths: [] })).toBe(
       false,
     );

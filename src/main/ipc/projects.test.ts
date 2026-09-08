@@ -174,15 +174,18 @@ describe('Project IPC handlers', () => {
     registerProjectHandlers(projectService);
 
     await expect(
-      findHandler(IPC_CHANNELS.openProject)({}, { projectId: 'project-1' }),
+      findHandler(IPC_CHANNELS.openProject)(
+        {},
+        { projectId: 'project-1', sessionId: 'renderer-page-1' },
+      ),
     ).resolves.toEqual([]);
     await findHandler(IPC_CHANNELS.closeProject)(
       {},
-      { projectId: 'project-1' },
+      { projectId: 'project-1', sessionId: 'renderer-page-1' },
     );
 
-    expect(openProject).toHaveBeenCalledWith('project-1');
-    expect(closeProject).toHaveBeenCalledWith('project-1');
+    expect(openProject).toHaveBeenCalledWith('project-1', 'renderer-page-1');
+    expect(closeProject).toHaveBeenCalledWith('project-1', 'renderer-page-1');
   });
 
   it('rejects malformed mutations before they reach ProjectService', async () => {
@@ -193,7 +196,13 @@ describe('Project IPC handlers', () => {
       findHandler(IPC_CHANNELS.createProject)({}, { name: '' }),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     await expect(
-      findHandler(IPC_CHANNELS.openProject)({}, { projectId: '' }),
+      findHandler(IPC_CHANNELS.openProject)(
+        {},
+        { projectId: '', sessionId: 'renderer-page-1' },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+    await expect(
+      findHandler(IPC_CHANNELS.openProject)({}, { projectId: 'project-1' }),
     ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
     expect(createProject).not.toHaveBeenCalled();
     expect(openProject).not.toHaveBeenCalled();

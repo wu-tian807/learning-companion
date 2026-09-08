@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +13,8 @@ import {
   ConversationPanelSessionHost,
   ConversationPanelSurface,
 } from './ConversationPanelHost';
+import { ConversationModeRegistry } from './conversation-mode-registry';
+import { projectConversationMode } from './project-conversation-mode';
 import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
 import { WorkbenchConversationRuntimeProvider } from './WorkbenchConversationRuntimeProvider';
 
@@ -198,6 +200,94 @@ describe('ConversationPanelHost Project ownership', () => {
     expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value)
       .toBe('切换布局后仍应保留的草稿');
     expect(container.textContent).toContain('这是需要保留的引用内容。');
+    runtime.dispose();
+  });
+
+  it('does not remount the surrounding workbench when chat opens or closes', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const mounted = vi.fn();
+    const unmounted = vi.fn();
+    function WorkbenchLayout() {
+      useEffect(() => {
+        mounted();
+        return () => unmounted();
+      }, []);
+      return <div data-testid="workbench-layout" />;
+    }
+
+    await act(async () => {
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelSessionHost
+            projectId="project-1"
+            historyStore={historyStore}
+            keepMounted
+          >
+            <WorkbenchLayout />
+          </ConversationPanelSessionHost>
+        </WorkbenchConversationRuntimeProvider>,
+      );
+      await Promise.resolve();
+    });
+    expect(mounted).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      runtime.open();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      runtime.close();
+      await Promise.resolve();
+    });
+
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(unmounted).not.toHaveBeenCalled();
+    runtime.dispose();
+  });
+
+  it('replaces only the chat controller when a Workbench opens a bound mode', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const mounted = vi.fn();
+    const unmounted = vi.fn();
+    const modeRegistry = new ConversationModeRegistry([
+      {
+        ...projectConversationMode,
+        id: 'workbench.bound-mode',
+      },
+    ]);
+    function WorkbenchLayout() {
+      useEffect(() => {
+        mounted();
+        return () => unmounted();
+      }, []);
+      return <div data-testid="workbench-layout" />;
+    }
+
+    await act(async () => {
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelSessionHost
+            projectId="project-1"
+            historyStore={historyStore}
+            modeRegistry={modeRegistry}
+            keepMounted
+          >
+            <WorkbenchLayout />
+          </ConversationPanelSessionHost>
+        </WorkbenchConversationRuntimeProvider>,
+      );
+      await Promise.resolve();
+    });
+    runtime.open({
+      modeId: 'workbench.bound-mode',
+      boundAssetId: 'asset-outline',
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(unmounted).not.toHaveBeenCalled();
     runtime.dispose();
   });
 

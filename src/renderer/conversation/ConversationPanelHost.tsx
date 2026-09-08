@@ -3,6 +3,9 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
+  useMemo,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
 
@@ -31,11 +34,64 @@ interface ConversationPanelSessionValue {
   readonly projectId: string;
   readonly runtime: WorkbenchConversationRuntime;
   readonly activeMode?: ConversationModeDefinition;
-  readonly controller?: ConversationSessionController;
+  readonly controllerStore: ConversationPanelControllerStore;
+  readonly controllerIdentity?: string;
 }
 
 const ConversationPanelSessionContext =
   createContext<ConversationPanelSessionValue | undefined>(undefined);
+
+interface ConversationPanelControllerSnapshot {
+  readonly identity?: string;
+  readonly controller?: ConversationSessionController;
+}
+
+/**
+ * Keeps the controller independent from the layout subtree that renders its
+ * floating or right-rail Surface. The controller publishes after each state
+ * update; the Project workbench never becomes its child.
+ */
+class ConversationPanelControllerStore {
+  private readonly listeners = new Set<() => void>();
+  private snapshot: ConversationPanelControllerSnapshot = Object.freeze({});
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  getSnapshot = (): ConversationPanelControllerSnapshot => this.snapshot;
+
+  publish(identity: string, controller: ConversationSessionController): void {
+    this.snapshot = Object.freeze({ identity, controller });
+    for (const listener of [...this.listeners]) listener();
+  }
+
+  clear(identity: string): void {
+    if (this.snapshot.identity !== identity) return;
+    this.snapshot = Object.freeze({});
+    for (const listener of [...this.listeners]) listener();
+  }
+}
+
+function ConversationControllerBridge({
+  controllerStore,
+  controllerIdentity,
+  controller,
+}: {
+  readonly controllerStore: ConversationPanelControllerStore;
+  readonly controllerIdentity: string;
+  readonly controller: ConversationSessionController;
+}) {
+  useLayoutEffect(() => {
+    controllerStore.publish(controllerIdentity, controller);
+  }, [controller, controllerIdentity, controllerStore]);
+  useLayoutEffect(
+    () => () => controllerStore.clear(controllerIdentity),
+    [controllerIdentity, controllerStore],
+  );
+  return null;
+}
 
 interface ConversationPanelSessionHostProps {
   readonly projectId: string;
@@ -95,6 +151,10 @@ export function ConversationPanelSessionHost({
 }: ConversationPanelSessionHostProps) {
   const runtime = useWorkbenchConversationRuntime();
   const snapshot = useWorkbenchConversationSnapshot(runtime);
+  const controllerStore = useMemo(
+    () => new ConversationPanelControllerStore(),
+    [],
+  );
   const settleLaunchRequest = useCallback(
     (requestId: number, error?: unknown) => {
       runtime.settleLaunchRequest(requestId, error);
@@ -104,50 +164,52 @@ export function ConversationPanelSessionHost({
   const currentAssetSource =
     snapshot.active?.assetId === selectedAssetId ? snapshot.active : undefined;
   const activeMode = modeRegistry.resolve(snapshot.modeId, mode);
+  const controllerIdentity = activeMode
+    ? `${activeMode.id}:${snapshot.boundAssetId ?? ''}`
+    : undefined;
   useEffect(() => {
     if (!activeMode && snapshot.launchRequest) {
       runtime.settleLaunchRequest(snapshot.launchRequest.id, new Error('此对话模式暂不可用。'));
     }
   }, [activeMode, runtime, snapshot.launchRequest]);
 
-  if (!activeMode) {
-    return (
-      <ConversationPanelSessionContext.Provider value={{ projectId, runtime }}>
-        {children}
-      </ConversationPanelSessionContext.Provider>
-    );
-  }
-
   return (
-    <ConversationSession
-      key={`${activeMode.id}:${snapshot.boundAssetId ?? ''}:${snapshot.panelOpen ? 'open' : 'closed'}`}
-      projectId={projectId}
-      historyStore={historyStore}
-      open={snapshot.panelOpen}
-      launchRequest={snapshot.launchRequest}
-      onLaunchConsumed={(requestId) => runtime.consumeLaunchRequest(requestId)}
-      onLaunchSettled={settleLaunchRequest}
-      mode={activeMode}
-      boundAssetId={snapshot.boundAssetId}
-      workspace={workspace}
-      currentAssetSource={currentAssetSource}
-      onPersistenceError={(error) => {
-        console.error('[conversation] persistence failed', error);
-      }}
-      onBusyChange={(busy) => runtime.setBusy(busy)}
-      onConversationIdentityChange={(conversationId) =>
-        runtime.setConversationIdentity(conversationId)
-      }
-      keepMounted={keepMounted}
+    <ConversationPanelSessionContext.Provider
+      value={{ projectId, runtime, activeMode, controllerStore, controllerIdentity }}
     >
-      {(controller) => (
-        <ConversationPanelSessionContext.Provider
-          value={{ projectId, runtime, activeMode, controller }}
+      {keepMounted || snapshot.panelOpen ? children : null}
+      {activeMode && (keepMounted || snapshot.panelOpen) && controllerIdentity && (
+        <ConversationSession
+          key={controllerIdentity}
+          projectId={projectId}
+          historyStore={historyStore}
+          open={snapshot.panelOpen}
+          launchRequest={snapshot.launchRequest}
+          onLaunchConsumed={(requestId) => runtime.consumeLaunchRequest(requestId)}
+          onLaunchSettled={settleLaunchRequest}
+          mode={activeMode}
+          boundAssetId={snapshot.boundAssetId}
+          workspace={workspace}
+          currentAssetSource={currentAssetSource}
+          onPersistenceError={(error) => {
+            console.error('[conversation] persistence failed', error);
+          }}
+          onBusyChange={(busy) => runtime.setBusy(busy)}
+          onConversationIdentityChange={(conversationId) =>
+            runtime.setConversationIdentity(conversationId)
+          }
+          keepMounted={keepMounted}
         >
-          {children}
-        </ConversationPanelSessionContext.Provider>
+          {(controller) => (
+            <ConversationControllerBridge
+              controllerStore={controllerStore}
+              controllerIdentity={controllerIdentity}
+              controller={controller}
+            />
+          )}
+        </ConversationSession>
       )}
-    </ConversationSession>
+    </ConversationPanelSessionContext.Provider>
   );
 }
 
@@ -160,14 +222,25 @@ export function ConversationPanelSurface({
   onExpand,
 }: ConversationPanelSurfaceProps) {
   const session = useContext(ConversationPanelSessionContext);
-  if (!session || !session.activeMode || !session.controller) {
-    if (!session) {
-      throw new Error('ConversationPanelSurface 必须放在 ConversationPanelSessionHost 中。');
-    }
+  if (!session) {
+    throw new Error('ConversationPanelSurface 必须放在 ConversationPanelSessionHost 中。');
+  }
+  const controllerSnapshot = useSyncExternalStore(
+    session.controllerStore.subscribe,
+    session.controllerStore.getSnapshot,
+    session.controllerStore.getSnapshot,
+  );
+  if (
+    !session.activeMode ||
+    !session.controllerIdentity ||
+    controllerSnapshot.identity !== session.controllerIdentity ||
+    !controllerSnapshot.controller
+  ) {
     return <UnavailableConversationPanel runtime={session.runtime} onClose={onClose} />;
   }
 
-  const { controller, runtime, activeMode, projectId } = session;
+  const { runtime, activeMode, projectId } = session;
+  const { controller } = controllerSnapshot;
   return (
     <ConversationPanel
       state={controller.state}

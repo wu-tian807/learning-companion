@@ -225,8 +225,8 @@ export interface LearningCompanionApi {
     request: SetProjectPinnedRequest,
   ) => Promise<ProjectSnapshot>;
   deleteProject: (request: DeleteProjectRequest) => Promise<void>;
-  openProject: (request: ProjectLifecycleRequest) => Promise<AssetSnapshot[]>;
-  closeProject: (request: ProjectLifecycleRequest) => Promise<void>;
+  openProject: (request: ProjectRuntimeSessionRequest) => Promise<AssetSnapshot[]>;
+  closeProject: (request: ProjectRuntimeSessionRequest) => Promise<void>;
   invokeWorkbenchAction: (
     request: WorkbenchActionRequest,
   ) => Promise<JsonValue>;
@@ -411,6 +411,11 @@ export interface DeleteProjectRequest {
 
 export interface ProjectLifecycleRequest {
   projectId: string;
+}
+
+/** Identifies the Renderer page that owns the active in-memory Project. */
+export interface ProjectRuntimeSessionRequest extends ProjectLifecycleRequest {
+  sessionId: string;
 }
 
 export interface AddLocalAssetsRequest {
@@ -639,6 +644,16 @@ export function isProjectLifecycleRequest(
   value: unknown,
 ): value is ProjectLifecycleRequest {
   return isRecord(value) && isRequiredText(value.projectId);
+}
+
+export function isProjectRuntimeSessionRequest(
+  value: unknown,
+): value is ProjectRuntimeSessionRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.projectId) &&
+    isRequiredText(value.sessionId, 160)
+  );
 }
 
 export function isWorkbenchActionRequest(

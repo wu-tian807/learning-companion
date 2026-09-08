@@ -35,8 +35,11 @@ export interface ProjectServiceApi {
     workspacePath: string,
   ): Promise<ProjectSnapshot>;
   openProjectWorkspace(projectId: string): Promise<void>;
-  openProject(projectId: string): Promise<readonly AssetSnapshot[]>;
-  closeProject(projectId: string): Promise<void>;
+  openProject(
+    projectId: string,
+    sessionId: string,
+  ): Promise<readonly AssetSnapshot[]>;
+  closeProject(projectId: string, sessionId: string): Promise<void>;
   deleteProject(projectId: string): Promise<void>;
 }
 
@@ -54,6 +57,9 @@ const defaultDependencies: ProjectServiceDependencies = {
 
 export class ProjectService implements ProjectServiceApi {
   private lifecycleTail: Promise<void> = Promise.resolve();
+  private activeRuntimeSession:
+    | { readonly projectId: string; readonly sessionId: string }
+    | undefined;
   private readonly dependencies: ProjectServiceDependencies;
 
   constructor(
@@ -169,8 +175,8 @@ export class ProjectService implements ProjectServiceApi {
         return this.withCurrentAssetCount(currentProject);
       }
 
-      const wasActive =
-        this.assetService.getActiveProjectId() === projectId;
+      const activeRuntimeSession = this.activeRuntimeSession;
+      const wasActive = this.assetService.getActiveProjectId() === projectId;
 
       if (wasActive) {
         await this.workbenchSessions.closeActive();
@@ -189,6 +195,9 @@ export class ProjectService implements ProjectServiceApi {
 
         if (wasActive) {
           await this.loadProjectRuntime(projectId);
+          if (activeRuntimeSession?.projectId === projectId) {
+            this.activeRuntimeSession = activeRuntimeSession;
+          }
         }
 
         return this.withCurrentAssetCount(updated);
@@ -197,6 +206,7 @@ export class ProjectService implements ProjectServiceApi {
           currentProject,
           preparation,
           wasActive,
+          activeRuntimeSession,
         );
         throw error;
       }
@@ -209,26 +219,26 @@ export class ProjectService implements ProjectServiceApi {
     );
   }
 
-  async openProject(projectId: string): Promise<readonly AssetSnapshot[]> {
+  async openProject(
+    projectId: string,
+    sessionId: string,
+  ): Promise<readonly AssetSnapshot[]> {
     return this.enqueueLifecycle(async () => {
       await this.workbenchSessions.closeActive();
       await this.unloadProjectRuntime();
-      return this.loadProjectRuntime(projectId);
+      const assets = await this.loadProjectRuntime(projectId);
+      this.activeRuntimeSession = { projectId, sessionId };
+      return assets;
     });
   }
 
-  async closeProject(projectId: string): Promise<void> {
+  async closeProject(projectId: string, sessionId: string): Promise<void> {
     await this.enqueueLifecycle(async () => {
-      const activeProjectId = this.assetService.getActiveProjectId();
-
-      if (activeProjectId === undefined) {
-        await this.workbenchSessions.closeActive();
-        await this.unloadProjectRuntime();
+      if (
+        this.activeRuntimeSession?.projectId !== projectId ||
+        this.activeRuntimeSession.sessionId !== sessionId
+      ) {
         return;
-      }
-
-      if (activeProjectId !== projectId) {
-        throw new AppError('PROJECT_CONTEXT_CHANGED');
       }
 
       await this.workbenchSessions.closeActive();
@@ -295,6 +305,9 @@ export class ProjectService implements ProjectServiceApi {
     project: Project,
     preparation: WorkspacePreparation,
     wasActive: boolean,
+    activeRuntimeSession:
+      | { readonly projectId: string; readonly sessionId: string }
+      | undefined,
   ): Promise<void> {
     try {
       const current = this.projectDatabase.get(project.id);
@@ -310,6 +323,9 @@ export class ProjectService implements ProjectServiceApi {
 
       if (wasActive) {
         await this.loadProjectRuntime(project.id);
+        if (activeRuntimeSession?.projectId === project.id) {
+          this.activeRuntimeSession = activeRuntimeSession;
+        }
       }
     } catch (rollbackError) {
       console.error('恢复原 Project Workspace 失败', rollbackError);
@@ -332,6 +348,7 @@ export class ProjectService implements ProjectServiceApi {
   }
 
   private async unloadProjectRuntime(): Promise<void> {
+    this.activeRuntimeSession = undefined;
     const generationTaskUnload = this.generationTasks.unloadProject();
     const agentSessionUnload = this.agentSessions.unloadProject();
     this.associationService.unloadProject();
