@@ -1,13 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
+import { CORE_HEADER_SURFACE_FACILITY_ID } from '../../shared/workbench/facilities/core-facilities';
+
 import {
   createOfficePreparePreviewCommand,
   isOfficeMediaType,
   isOfficeWorkbenchPayload,
   OFFICE_MEDIA_TYPES,
+  officeWorkbenchManifest,
 } from './shared';
 
 describe('Office Workbench shared contract', () => {
+  it('declares the header surface used by document attachment controls', () => {
+    expect(officeWorkbenchManifest.facilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: CORE_HEADER_SURFACE_FACILITY_ID }),
+      ]),
+    );
+  });
+
   it('covers Word and PowerPoint legacy and OpenXML media types', () => {
     expect(OFFICE_MEDIA_TYPES).toHaveLength(4);
     expect(isOfficeMediaType('application/msword')).toBe(true);

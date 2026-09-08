@@ -164,13 +164,6 @@ function isTextTargetedAttachment(attachment: AssetAttachment): boolean {
   return extractPosition(attachment.target) === undefined;
 }
 
-function markerVisibilityStorageKey(
-  projectId: string,
-  assetId: string,
-): string {
-  return `learning-companion:attachment-markers-visible:v1:${projectId}:${assetId}`;
-}
-
 function extractMetadataPreview(metadata: JsonValue): string {
   if (
     metadata &&
@@ -450,18 +443,6 @@ export function AttachmentHost({
     readonly height: number;
   }>({ width: 0, height: 0 });
   const knownAttachmentIdsRef = useRef(new Set<string>());
-  const [markersVisible, setMarkersVisible] = useState(() => {
-    try {
-      return (
-        window.localStorage.getItem(
-          markerVisibilityStorageKey(projectId, assetId),
-        ) !== '0'
-      );
-    } catch {
-      return true;
-    }
-  });
-
   useEffect(() => {
     if (attachments.length === 0) return;
     setCollapsedAttachmentIds((current) => {
@@ -471,30 +452,13 @@ export function AttachmentHost({
       for (const attachment of attachments) {
         if (!known.has(attachment.id)) {
           known.add(attachment.id);
-          if (isTextTargetedAttachment(attachment)) {
-            next.add(attachment.id);
-            changed = true;
-          }
+          next.add(attachment.id);
+          changed = true;
         }
       }
       return changed ? next : current;
     });
   }, [attachments]);
-
-  const toggleMarkersVisible = useCallback(() => {
-    setMarkersVisible((visible) => {
-      const next = !visible;
-      try {
-        window.localStorage.setItem(
-          markerVisibilityStorageKey(projectId, assetId),
-          next ? '1' : '0',
-        );
-      } catch {
-        // 存储不可用时仅在本次会话生效。
-      }
-      return next;
-    });
-  }, [assetId, projectId]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -578,16 +542,8 @@ export function AttachmentHost({
   const handleMarkerClick = useCallback(
     (attachmentId: string, event: ReactMouseEvent) => {
       event.stopPropagation();
-      setCollapsedAttachmentIds((current) => {
-        if (!current.has(attachmentId)) {
-          const next = new Set(current);
-          next.add(attachmentId);
-          return next;
-        }
-        const next = new Set(current);
-        next.delete(attachmentId);
-        return next;
-      });
+      setActiveBody(undefined);
+      setActivePopupId(attachmentId);
       onAttachmentClick?.(attachmentId);
     },
     [onAttachmentClick],
@@ -670,7 +626,7 @@ export function AttachmentHost({
 
   return (
     <div ref={hostRef} className="pointer-events-none absolute inset-0 z-20 overflow-visible">
-      {markersVisible && markerGroups.map((group) => {
+      {markerGroups.map((group) => {
         const att = group.at(-1)!;
         const targetRect = targetRects.get(att.id);
         const position = extractPosition(att.target);
@@ -750,14 +706,6 @@ export function AttachmentHost({
                   height: markerSize,
                 }}
                 onClick={(event) => {
-                  event.stopPropagation();
-                  if (group.length > 1) {
-                    setChooserGroupId((current) =>
-                      current === att.id ? null : att.id,
-                    );
-                    onAttachmentClick?.(att.id);
-                    return;
-                  }
                   handleMarkerClick(att.id, event);
                 }}
               >
@@ -893,27 +841,7 @@ export function AttachmentHost({
         );
       })}
 
-      <button
-        type="button"
-        aria-pressed={markersVisible}
-        aria-label={markersVisible ? '隐藏原文批注标记' : '显示原文批注标记'}
-        title={markersVisible ? '隐藏原文批注标记' : '显示原文批注标记'}
-        onClick={toggleMarkersVisible}
-        className={`pointer-events-auto absolute bottom-9 right-2 z-[70] flex items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[10px] shadow-[0_6px_18px_rgba(0,0,0,0.4)] backdrop-blur transition ${
-          markersVisible
-            ? 'border-indigo-300/30 bg-[#242b3b]/95 text-indigo-200 hover:bg-indigo-400/15'
-            : 'border-white/10 bg-[#242b3b]/95 text-slate-500 hover:text-slate-300'
-        }`}
-      >
-        <span aria-hidden="true">{markersVisible ? '✦' : '✧'}</span>
-        <span>
-          {markersVisible
-            ? `批注 ${attachments.length}`
-            : '批注已隐藏'}
-        </span>
-      </button>
-
-      {markersVisible && sidebarOpen && (
+      {sidebarOpen && (
             <aside className="pointer-events-auto absolute bottom-4 right-3 top-24 z-[70] flex w-80 max-w-[calc(100%-1.5rem)] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#1b212b]/98 shadow-[0_24px_70px_rgba(0,0,0,.6)] backdrop-blur">
               <div className="flex items-center justify-between border-b border-white/[0.08] px-4 py-3">
                 <div>
@@ -968,7 +896,7 @@ export function AttachmentHost({
             </aside>
           )}
 
-      {markersVisible && activePopupId && (
+      {activePopupId && (
         <AnnotationPopup
           body={activeBody}
           attachment={

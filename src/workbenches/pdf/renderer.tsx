@@ -1899,6 +1899,7 @@ export function PdfWorkbenchView(
       attachments={props.attachments ?? []}
       refreshAttachments={props.refreshAttachments ?? (async () => undefined)}
       onError={props.onError}
+      attachmentVisibilityControl
     >
       <PdfDocumentWorkbenchView
         {...props}

@@ -81,8 +81,19 @@ function mapOfficeTarget(
   return target;
 }
 
-function mapOfficeTargetToPdf(target: ContentAssetTarget | undefined): ContentAssetTarget | undefined {
+export function mapOfficeTargetToPdf(
+  target: ContentAssetTarget | undefined,
+): ContentAssetTarget | undefined {
   if (!target) return undefined;
+  if (
+    target.targetType === PDF_TEXT_RANGE_ANCHOR_TYPE ||
+    target.targetType === PDF_PAGE_ANCHOR_TYPE ||
+    target.targetType === PDF_REGION_ANCHOR_TYPE
+  ) {
+    // Attachments created before Office gained its own Target identity were
+    // persisted with the derived PDF preview Target. Keep them visible.
+    return target;
+  }
   if (target.targetType === OFFICE_TEXT_RANGE_ANCHOR_TYPE) {
     return { ...target, targetType: PDF_TEXT_RANGE_ANCHOR_TYPE, targetVersion: 1 };
   }
@@ -181,6 +192,7 @@ function OfficePdfPreview({
       attachments={props.attachments ?? []}
       refreshAttachments={props.refreshAttachments ?? (async () => undefined)}
       onError={props.onError}
+      attachmentVisibilityControl
     >
       <PdfDocumentWorkbenchView
         {...props}

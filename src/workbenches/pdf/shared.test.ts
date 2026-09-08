@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
+import { CORE_HEADER_SURFACE_FACILITY_ID } from '../../shared/workbench/facilities/core-facilities';
+
 import {
   createPdfDocumentIdentity,
   createPdfPageTarget,
@@ -21,6 +23,14 @@ import {
 } from './shared';
 
 describe('PDF Workbench shared protocol', () => {
+  it('declares the header surface used by document attachment controls', () => {
+    expect(pdfWorkbenchManifest.facilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: CORE_HEADER_SURFACE_FACILITY_ID }),
+      ]),
+    );
+  });
+
   it('declares the PDF media type, stream capability, and text anchor', () => {
     expect(pdfWorkbenchManifest.supportedMediaTypes).toEqual([
       'application/pdf',
