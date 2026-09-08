@@ -82,6 +82,43 @@ describe('LearningOutlineBriefMonitor', () => {
     }));
   });
 
+  it('reconciles a rewrite when the directory watcher does not deliver an event', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'lc-outline-brief-poll-'));
+    temporaryDirectories.push(directory);
+    const asset = {
+      id: 'outline-1', projectId: 'project-1',
+      mediaType: LEARNING_OUTLINE_ASSET_MEDIA_TYPE,
+    };
+    const monitor = new LearningOutlineBriefMonitor(
+      { get: vi.fn(() => asset) } as never,
+      {
+        listByAsset: vi.fn(async () => []),
+        createWithContent: vi.fn(async () => ({ updatedTime: 42 })),
+      } as never,
+      { prepare: vi.fn(async () => directory) } as never,
+    );
+    monitors.push(monitor);
+    await monitor.start(asset.projectId, asset.id);
+
+    const runtime = (
+      monitor as unknown as {
+        readonly runtimes: ReadonlyMap<string, { readonly watcher?: { close(): void } }>;
+      }
+    ).runtimes.get(asset.id);
+    runtime?.watcher?.close();
+
+    await writeFile(join(directory, 'learning-brief.json'), JSON.stringify({
+      ...completeBrief(),
+    }));
+
+    await vi.waitFor(
+      () => expect(monitor.getState(asset.projectId, asset.id)).toMatchObject({
+        valid: true, ready: true,
+      }),
+      { timeout: 2_000 },
+    );
+  });
+
   it('restores a snapshot, observes a valid rewrite, and releases the watcher', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'lc-outline-brief-'));
     temporaryDirectories.push(directory);
