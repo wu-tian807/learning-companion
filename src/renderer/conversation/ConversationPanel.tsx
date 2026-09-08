@@ -52,6 +52,7 @@ function ContextCard({
   readonly onRemove?: () => void;
   readonly onRevealError?: (error: unknown) => void;
 }) {
+  const [detailExpanded, setDetailExpanded] = useState(false);
   const contentPresentation = presentation ?? {
     label: '引用内容',
   };
@@ -66,11 +67,6 @@ function ContextCard({
           alt={contentPresentation.label}
           className="mt-2 max-h-32 w-full rounded-lg border border-white/10 bg-white object-contain"
         />
-      )}
-      {contentPresentation.detail && (
-        <span className="mt-1 block line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-slate-400">
-          {contentPresentation.detail}
-        </span>
       )}
     </>
   );
@@ -95,6 +91,26 @@ function ContextCard({
         </button>
       ) : (
         content
+      )}
+      {contentPresentation.detail && (
+        <div className="mt-1">
+          <div
+            className={
+              detailExpanded
+                ? 'max-h-32 overflow-y-auto whitespace-pre-wrap pr-1 text-xs leading-5 text-slate-400'
+                : 'line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-slate-400'
+            }
+          >
+            {contentPresentation.detail}
+          </div>
+          <button
+            type="button"
+            className="mt-1 text-[10px] text-indigo-300/70 hover:text-indigo-200"
+            onClick={() => setDetailExpanded((expanded) => !expanded)}
+          >
+            {detailExpanded ? '收起引用' : '展开引用'}
+          </button>
+        </div>
       )}
       {removable && (
         <button

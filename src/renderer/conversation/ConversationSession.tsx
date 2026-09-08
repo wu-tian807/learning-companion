@@ -10,7 +10,7 @@ import { useConversationController } from './conversation-controller';
 import type { ConversationModeDefinition } from './conversation-mode';
 import { projectConversationMode } from './project-conversation-mode';
 
-type ConversationController = ReturnType<typeof useConversationController>;
+export type ConversationSessionController = ReturnType<typeof useConversationController>;
 
 /**
  * Headless conversation lifecycle shared by side panels, dialogs and embedded
@@ -30,6 +30,7 @@ export function ConversationSession({
   boundAssetId,
   workspace,
   currentAssetSource,
+  keepMounted = false,
   children,
 }: {
   readonly open: boolean;
@@ -45,7 +46,9 @@ export function ConversationSession({
   readonly boundAssetId?: string;
   readonly workspace?: ConversationWorkspaceBinding;
   readonly currentAssetSource?: ActiveWorkbenchConversationContribution;
-  readonly children: (controller: ConversationController) => ReactNode;
+  /** Keep the controller alive while its visual surface moves between layouts. */
+  readonly keepMounted?: boolean;
+  readonly children: (controller: ConversationSessionController) => ReactNode;
 }) {
   const controller = useConversationController({
     open,
@@ -71,10 +74,12 @@ export function ConversationSession({
   }, [controller.state.busy]);
 
   useEffect(() => {
-    onConversationIdentityChange?.(controller.state.conversation.id);
-  }, [controller.state.conversation.id, onConversationIdentityChange]);
+    if (open) {
+      onConversationIdentityChange?.(controller.state.conversation.id);
+    }
+  }, [controller.state.conversation.id, onConversationIdentityChange, open]);
 
   useEffect(() => () => onBusyChangeRef.current?.(false), []);
 
-  return open ? children(controller) : null;
+  return open || keepMounted ? children(controller) : null;
 }

@@ -8,7 +8,11 @@ import type {
   ConversationHistoryStore,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
-import { ConversationPanelHost } from './ConversationPanelHost';
+import {
+  ConversationPanelHost,
+  ConversationPanelSessionHost,
+  ConversationPanelSurface,
+} from './ConversationPanelHost';
 import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
 import { WorkbenchConversationRuntimeProvider } from './WorkbenchConversationRuntimeProvider';
 
@@ -89,6 +93,32 @@ describe('ConversationPanelHost Project ownership', () => {
     });
   }
 
+  async function renderPersistentSurface(
+    runtime: WorkbenchConversationRuntime,
+    rightRail: boolean,
+  ) {
+    await act(async () => {
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelSessionHost
+            projectId="project-1"
+            historyStore={historyStore}
+            selectedAssetId="asset-html"
+            keepMounted
+          >
+            {rightRail ? (
+              <ConversationPanelSurface onSelectAsset={vi.fn()} />
+            ) : (
+              <ConversationPanelSurface compact onSelectAsset={vi.fn()} />
+            )}
+          </ConversationPanelSessionHost>
+        </WorkbenchConversationRuntimeProvider>,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
   it('rejects unavailable explicit modes without starting a general conversation', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const save = vi.spyOn(historyStore, 'save');
@@ -129,6 +159,46 @@ describe('ConversationPanelHost Project ownership', () => {
     await render(runtime);
     await expect(pending).resolves.toBeUndefined();
     expect(runtime.getSnapshot().launchRequest).toBeUndefined();
+  });
+
+  it('preserves the draft and pending reference when a floating chat expands to the right rail', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('html.owner', 'asset-html', {
+      contextProviderId: 'builtin.html.conversation',
+      sourceAssetMode: 'reference',
+    });
+    runtime.open({
+      ownerId: 'html.owner',
+      context: {
+        selectedText: '这是需要保留的引用内容。',
+        target: {
+          scope: 'content',
+          targetType: 'html.range',
+          targetVersion: 1,
+          targetPayload: { path: 'p:1' },
+        },
+      },
+    });
+    await renderPersistentSurface(runtime, false);
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    expect(textarea).not.toBeNull();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )!.set!;
+      setter.call(textarea, '切换布局后仍应保留的草稿');
+      textarea!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(container.textContent).toContain('这是需要保留的引用内容。');
+
+    await renderPersistentSurface(runtime, true);
+
+    expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value)
+      .toBe('切换布局后仍应保留的草稿');
+    expect(container.textContent).toContain('这是需要保留的引用内容。');
+    runtime.dispose();
   });
 
   it('uses the selected Asset Workbench for a contextless Task without rendering a reference card', async () => {

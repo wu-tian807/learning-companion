@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { StrictMode } from 'react';
+import { StrictMode, type ReactNode } from 'react';
 import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -13,18 +13,29 @@ const projectPageHarness = vi.hoisted(() => ({
 }));
 
 vi.mock('../conversation/ConversationPanelHost', () => ({
-  ConversationPanelHost: ({
+  ConversationPanelSessionHost: ({
+    children,
     selectedAssetId,
+  }: {
+    children: ReactNode;
+    selectedAssetId?: string;
+  }) => (
+    <div
+      data-testid="project-conversation-session"
+      data-selected-asset-id={selectedAssetId}
+    >
+      {children}
+    </div>
+  ),
+  ConversationPanelSurface: ({
     compact,
     onExpand,
   }: {
-    selectedAssetId?: string;
     compact?: boolean;
     onExpand?: () => void;
   }) => (
     <div
       data-testid="project-conversation-panel"
-      data-selected-asset-id={selectedAssetId}
       data-compact={String(Boolean(compact))}
     >
       {onExpand && (
@@ -64,14 +75,20 @@ vi.mock('./ProjectNotebookPanel', async () => {
   return {
   ProjectNotebookPanel: ({
     active,
+    keepWorkbenchMounted,
     onSelectMaterialAsset,
   }: {
     active: boolean;
+    keepWorkbenchMounted?: boolean;
     onSelectMaterialAsset: (assetId: string) => Promise<void>;
   }) => {
     const runtime = useWorkbenchConversationRuntime();
     return (
-      <div data-testid="notebook-panel" data-active={String(active)}>
+      <div
+        data-testid="notebook-panel"
+        data-active={String(active)}
+        data-keep-workbench-mounted={String(Boolean(keepWorkbenchMounted))}
+      >
         <button
           type="button"
           onClick={() => void onSelectMaterialAsset('asset-html')}
@@ -201,7 +218,7 @@ describe('ProjectPage Project conversation lifecycle', () => {
 
     expect(button?.getAttribute('aria-expanded')).toBe('true');
     expect(
-      container.querySelector('[data-testid="project-conversation-panel"]')
+      container.querySelector('[data-testid="project-conversation-session"]')
         ?.getAttribute('data-selected-asset-id'),
     ).toBe('asset-html');
     expect(
@@ -212,7 +229,6 @@ describe('ProjectPage Project conversation lifecycle', () => {
       container.querySelector('[data-project-right-panel]')
         ?.getAttribute('data-project-right-panel'),
     ).toBe('conversation');
-
     await act(async () => button?.click());
     expect(button?.getAttribute('aria-expanded')).toBe('false');
   });
@@ -286,6 +302,10 @@ describe('ProjectPage Project conversation lifecycle', () => {
     expect(
       container.querySelector('[data-project-conversation-presentation]'),
     ).toBeNull();
+    expect(
+      container.querySelector('[data-testid="notebook-panel"]')
+        ?.getAttribute('data-keep-workbench-mounted'),
+    ).toBe('true');
   });
 
   it('keeps the notebook viewport while it opens a referenced normal Asset', async () => {

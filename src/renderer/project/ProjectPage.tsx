@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { ErrorDialog } from '../components/ErrorDialog';
-import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
+import {
+  ConversationPanelSessionHost,
+  ConversationPanelSurface,
+} from '../conversation/ConversationPanelHost';
 import { createProjectConversationHistoryStore } from '../conversation/conversation-history-store';
 import { GenerationCenter } from '../generation/GenerationCenter';
 import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conversation-context';
@@ -75,6 +78,8 @@ export function ProjectPage({
   const [error, setError] = useState<string | null>(null);
   const [conversationPresentation, setConversationPresentation] =
     useState<ProjectConversationPresentation>('floating');
+  const [preserveNotebookWorkbench, setPreserveNotebookWorkbench] =
+    useState(false);
   const leftToggleRef = useRef<HTMLButtonElement>(null);
   const rightToggleRef = useRef<HTMLButtonElement>(null);
   const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
@@ -88,6 +93,10 @@ export function ProjectPage({
     toggleLeft,
     toggleRight,
   } = layout;
+  const rightPanelRef = useRef(layout.rightPanel);
+  useEffect(() => {
+    rightPanelRef.current = layout.rightPanel;
+  }, [layout.rightPanel]);
   const session = useProjectSession(project.id, setError);
   const [workbenchOpenAttempt, setWorkbenchOpenAttempt] = useState(0);
   const workbenchOpening = useMemo(() => new WorkbenchOpenCoordinator(project.id), [project.id]);
@@ -241,6 +250,19 @@ export function ProjectPage({
     conversationSnapshot.panelOpen &&
     conversationPresentation === 'right' &&
     layout.rightPanel === 'conversation';
+  useEffect(
+    () =>
+      conversationRuntime.subscribe(() => {
+        const snapshot = conversationRuntime.getSnapshot();
+        setPreserveNotebookWorkbench((current) => {
+          const next = snapshot.panelOpen && (
+            current || rightPanelRef.current === 'learning-note'
+          );
+          return current === next ? current : next;
+        });
+      }),
+    [conversationRuntime],
+  );
   const toggleLeftPanel = useCallback(() => {
     if (
       layout.mode === 'small' &&
@@ -408,10 +430,16 @@ export function ProjectPage({
       </header>
 
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
-        <WorkbenchRuntimeProvider onError={setError}>
-          <AssetSelectionCoordinatorProvider
-            coordinator={assetOperations.selectionCoordinator}
-          >
+        <ConversationPanelSessionHost
+          projectId={project.id}
+          historyStore={conversationHistoryStore}
+          selectedAssetId={assetOperations.selectedAsset?.id}
+          keepMounted
+        >
+          <WorkbenchRuntimeProvider onError={setError}>
+            <AssetSelectionCoordinatorProvider
+              coordinator={assetOperations.selectionCoordinator}
+            >
             <section className="relative flex min-h-0 flex-1 gap-3">
               {openOverlay && (
                 <button
@@ -508,10 +536,7 @@ export function ProjectPage({
                     data-project-conversation-presentation={conversationPresentation}
                     className="absolute bottom-3 right-3 z-40 h-[min(30rem,calc(100%-1.5rem))] w-[min(25rem,calc(100%-1.5rem))] min-h-0"
                   >
-                    <ConversationPanelHost
-                      projectId={project.id}
-                      historyStore={conversationHistoryStore}
-                      selectedAssetId={assetOperations.selectedAsset?.id}
+                    <ConversationPanelSurface
                       onClose={closeConversationPanel}
                       onSelectAsset={selectConversationAsset}
                       onOpenSettings={onOpenSettings}
@@ -529,11 +554,8 @@ export function ProjectPage({
                 panel={layout.rightPanel}
                 inline={layout.rightInline}
                 conversation={
-                  conversationPresentation === 'right' ? (
-                    <ConversationPanelHost
-                      projectId={project.id}
-                      historyStore={conversationHistoryStore}
-                      selectedAssetId={assetOperations.selectedAsset?.id}
+                  conversationSnapshot.panelOpen && conversationPresentation === 'right' ? (
+                    <ConversationPanelSurface
                       onClose={closeConversationPanel}
                       onSelectAsset={selectConversationAsset}
                       onOpenSettings={onOpenSettings}
@@ -544,6 +566,7 @@ export function ProjectPage({
                 learningNote={
                   <ProjectNotebookPanel
                     active={layout.rightPanel === 'learning-note'}
+                    keepWorkbenchMounted={preserveNotebookWorkbench}
                     projectReady={session.loadState.kind === 'ready'}
                     projectId={project.id}
                     assets={
@@ -589,8 +612,9 @@ export function ProjectPage({
                 }
               />
             </section>
-          </AssetSelectionCoordinatorProvider>
-        </WorkbenchRuntimeProvider>
+            </AssetSelectionCoordinatorProvider>
+          </WorkbenchRuntimeProvider>
+        </ConversationPanelSessionHost>
       </WorkbenchConversationRuntimeProvider>
 
       {dragging && (

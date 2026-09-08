@@ -8,6 +8,7 @@ import { useProjectNotebook } from './use-project-notebook';
 
 export function ProjectNotebookPanel({
   active,
+  keepWorkbenchMounted = false,
   projectReady,
   projectId,
   assets,
@@ -17,6 +18,8 @@ export function ProjectNotebookPanel({
   onError,
 }: {
   readonly active: boolean;
+  /** Keeps a notebook source available while its AI chat is expanded to the right rail. */
+  readonly keepWorkbenchMounted?: boolean;
   readonly projectReady: boolean;
   readonly projectId: string;
   readonly assets: readonly AssetSnapshot[];
@@ -25,7 +28,8 @@ export function ProjectNotebookPanel({
   readonly onLifecycleTaskChange: (task: Promise<void>) => void;
   readonly onError: (message: string) => void;
 }) {
-  const notebook = useProjectNotebook(projectId, active && projectReady);
+  const workbenchMounted = active || keepWorkbenchMounted;
+  const notebook = useProjectNotebook(projectId, workbenchMounted && projectReady);
   const [newName, setNewName] = useState('新建笔记');
   const markdownAssets = useMemo(
     () => assets.filter((asset) => asset.mediaType === 'text/markdown'),
@@ -94,7 +98,7 @@ export function ProjectNotebookPanel({
         </div>
       ) : (
         <div className="min-h-0 flex-1 p-2">
-          {active && (
+          {workbenchMounted && (
             <WorkbenchRuntimeProvider onError={onError}>
               <AssetWorkbenchHost
                 projectId={projectId}

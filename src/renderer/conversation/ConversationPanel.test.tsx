@@ -197,6 +197,10 @@ describe('ConversationPanel', () => {
     expect(html).toContain('AGENT_PROVIDER_SELECTION_REQUIRED');
     expect(html).toContain('重试原任务');
     expect(html).toContain('打开模型设置');
+    expect(html).toContain('展开引用');
+    const referenceDetail = html.match(/class="([^"]*line-clamp-4[^"]*)"/u)?.[1];
+    expect(referenceDetail).toBeDefined();
+    expect(referenceDetail).not.toContain('block');
     const panel = html.match(
       /<section[^>]*id="project-conversation-panel"[^>]*>/u,
     )?.[0];
