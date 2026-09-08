@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import { watch, type FSWatcher } from 'node:fs';
+import {
+  unwatchFile,
+  watch,
+  watchFile,
+  type FSWatcher,
+  type Stats,
+} from 'node:fs';
 import { access, mkdir, readFile, realpath } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -28,6 +34,7 @@ import type { LearningOutlineChangedEvent } from '../shared';
 
 const BRIEF_DIRECTORY_KEY = 'learning-outline-brief';
 const MAX_BRIEF_BYTES = 512 * 1_024;
+const FALLBACK_FILE_POLL_INTERVAL_MS = 500;
 
 function isMissing(error: unknown): boolean {
   return (
@@ -91,9 +98,18 @@ interface BriefRuntime {
   readonly directory: string;
   readonly filePath: string;
   watcher?: FSWatcher;
+  pollingListener?: (current: Stats, previous: Stats) => void;
   scanTimer?: ReturnType<typeof setTimeout>;
   scanSerial: Promise<void>;
   state: LearningOutlineBriefState;
+}
+
+function fileStatsChanged(current: Stats, previous: Stats): boolean {
+  return (
+    current.mtimeMs !== previous.mtimeMs ||
+    current.ctimeMs !== previous.ctimeMs ||
+    current.size !== previous.size
+  );
 }
 
 /** Watches the Agent-owned brief copy and persists only validated snapshots. */
@@ -167,7 +183,7 @@ export class LearningOutlineBriefMonitor {
     this.disposed = true;
     await Promise.allSettled([...this.starts.values()]);
     const runtimes = [...this.runtimes.values()];
-    for (const runtime of runtimes) runtime.watcher?.close();
+    for (const runtime of runtimes) this.stopWatching(runtime);
     await Promise.allSettled(
       runtimes.map((runtime) => this.flushRuntime(runtime)),
     );
@@ -184,7 +200,7 @@ export class LearningOutlineBriefMonitor {
     this.disposed = true;
     for (const runtime of this.runtimes.values()) {
       if (runtime.scanTimer) clearTimeout(runtime.scanTimer);
-      runtime.watcher?.close();
+      this.stopWatching(runtime);
     }
     this.runtimes.clear();
     this.listeners.clear();
@@ -244,8 +260,28 @@ export class LearningOutlineBriefMonitor {
       state: Object.freeze({ valid: false, ...saved }),
     };
     runtime.watcher = watch(directory, () => this.scheduleScan(runtime));
+    runtime.pollingListener = (current, previous) => {
+      if (fileStatsChanged(current, previous)) this.scheduleScan(runtime);
+    };
+    // fs.watch has low latency but Windows can lose a directory notification,
+    // particularly when the writer uses a different path alias. Poll only this
+    // small, already-existing file so every active brief eventually reconciles.
+    watchFile(
+      runtime.filePath,
+      { interval: FALLBACK_FILE_POLL_INTERVAL_MS },
+      runtime.pollingListener,
+    );
     this.runtimes.set(assetId, runtime);
     this.scheduleScan(runtime, true);
+  }
+
+  private stopWatching(runtime: BriefRuntime): void {
+    runtime.watcher?.close();
+    runtime.watcher = undefined;
+    if (runtime.pollingListener) {
+      unwatchFile(runtime.filePath, runtime.pollingListener);
+      runtime.pollingListener = undefined;
+    }
   }
 
   private scheduleScan(runtime: BriefRuntime, immediate = false): void {
@@ -288,7 +324,7 @@ export class LearningOutlineBriefMonitor {
   private async scan(runtime: BriefRuntime): Promise<void> {
     const asset = this.assets.get(runtime.projectId, runtime.assetId);
     if (!asset || asset.mediaType !== LEARNING_OUTLINE_ASSET_MEDIA_TYPE) {
-      runtime.watcher?.close();
+      this.stopWatching(runtime);
       this.runtimes.delete(runtime.assetId);
       return;
     }
