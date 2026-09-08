@@ -34,7 +34,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       expect(context.sqlite.pragma('foreign_keys', { simple: true })).toBe(1);
       const tableNames = context.sqlite
         .prepare<[], { name: string }>(
@@ -53,6 +53,7 @@ describe('initializeDatabase', () => {
         'assets',
         'generation_tasks',
         'project_conversations',
+        'project_notebook_assets',
         'projects',
         'workbench_state_data',
         'workbench_states',
@@ -160,10 +161,85 @@ describe('initializeDatabase', () => {
 
     try {
       expect(secondContext.sqlite.pragma('user_version', { simple: true })).toBe(
-        28,
+        30,
       );
     } finally {
       secondContext.close();
+    }
+  });
+
+  it('advances version 29 notebook databases to version 30 without changing their schema or data', async () => {
+    const databaseFile = await createDatabaseFile();
+    const version29Context = initializeDatabase(databaseFile);
+    const notebookTableSql = version29Context.sqlite
+      .prepare<[], { sql: string }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project_notebook_assets'",
+      )
+      .get()!.sql;
+    version29Context.sqlite
+      .prepare(
+        `INSERT INTO projects (
+          id, name, icon, created_time, pinned, workspace_path
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .run('project', 'Project', '📘', 1, 0, '/tmp/projects/project');
+    version29Context.sqlite
+      .prepare(
+        `INSERT INTO project_notebook_assets (
+          project_id, asset_id, updated_time
+        ) VALUES (?, ?, ?)`,
+      )
+      .run('project', null, 2);
+    version29Context.sqlite.pragma('user_version = 29');
+    version29Context.close();
+
+    const context = initializeDatabase(databaseFile);
+
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
+      expect(
+        context.sqlite
+          .prepare<[], { sql: string }>(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project_notebook_assets'",
+          )
+          .get()!.sql,
+      ).toBe(notebookTableSql);
+      expect(
+        context.sqlite
+          .prepare<[], { projectId: string; assetId: string | null; updatedTime: number }>(
+            `SELECT project_id AS projectId, asset_id AS assetId, updated_time AS updatedTime
+             FROM project_notebook_assets`,
+          )
+          .all(),
+      ).toEqual([{ projectId: 'project', assetId: null, updatedTime: 2 }]);
+    } finally {
+      context.close();
+    }
+  });
+
+  it('opens the historical version 30 notebook schema without rewriting it', async () => {
+    const databaseFile = await createDatabaseFile();
+    const historicalContext = initializeDatabase(databaseFile);
+    historicalContext.sqlite.exec(`
+      ALTER TABLE project_notebook_assets ADD COLUMN legacy_revision INTEGER;
+      ALTER TABLE project_notebook_assets ADD COLUMN migration_operation_id TEXT;
+    `);
+    historicalContext.close();
+
+    const context = initializeDatabase(databaseFile);
+
+    try {
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
+      expect(
+        context.sqlite
+          .prepare<[], { name: string }>('PRAGMA table_info(project_notebook_assets)')
+          .all()
+          .map(({ name }) => name),
+      ).toEqual(
+        expect.arrayContaining(['legacy_revision', 'migration_operation_id']),
+      );
+    } finally {
+      context.close();
     }
   });
 
@@ -207,7 +283,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM assets')
@@ -284,7 +360,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM generation_tasks')
@@ -369,7 +445,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       expect(
         context.sqlite
           .prepare<
@@ -449,7 +525,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('SELECT name FROM projects')
@@ -517,7 +593,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       expect(
         context.sqlite
           .prepare<[], { id: string }>('SELECT id FROM projects')
@@ -862,7 +938,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       expect(
         context.sqlite
           .prepare<[], { updatedTime: number }>(
@@ -968,7 +1044,7 @@ describe('initializeDatabase', () => {
     const context = initializeDatabase(databaseFile);
 
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       expect(
         context.sqlite
           .prepare<[], { name: string }>('PRAGMA table_info(asset_references)')
@@ -1084,7 +1160,7 @@ describe('initializeDatabase', () => {
 
     const context = initializeDatabase(databaseFile);
     try {
-      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(28);
+      expect(context.sqlite.pragma('user_version', { simple: true })).toBe(30);
       const migrated = context.sqlite
         .prepare<
           [],
@@ -1118,9 +1194,11 @@ describe('initializeDatabase', () => {
     const databaseFile = await createDatabaseFile();
     initializeDatabase(databaseFile).close();
     const newer = new Database(databaseFile);
-    newer.pragma('user_version = 29');
+    newer.pragma('user_version = 31');
     newer.close();
 
-    expect(() => initializeDatabase(databaseFile)).toThrow(/28/);
+    expect(() => initializeDatabase(databaseFile)).toThrow(
+      '数据库版本 31 高于应用支持的版本 30',
+    );
   });
 });

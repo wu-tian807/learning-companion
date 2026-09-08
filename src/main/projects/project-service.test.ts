@@ -241,8 +241,10 @@ describe('ProjectService', () => {
   it('opens and closes Projects through the serialized lifecycle', async () => {
     const current = createDependencies('project');
 
-    await expect(current.service.openProject('project')).resolves.toEqual([]);
-    await current.service.closeProject('project');
+    await expect(
+      current.service.openProject('project', 'session-1'),
+    ).resolves.toEqual([]);
+    await current.service.closeProject('project', 'session-1');
     expect(current.assetService.loadFromProject).toHaveBeenCalledWith(
       'project',
     );
@@ -253,6 +255,36 @@ describe('ProjectService', () => {
     expect(
       current.associationService.unloadProject,
     ).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores an older page cleanup after the same Project has a newer owner', async () => {
+    const current = createDependencies('project');
+
+    await current.service.openProject('project', 'old-page');
+    await current.service.openProject('project', 'new-page');
+    const closesBeforeOldCleanup = current.calls.filter(
+      (call) => call === 'close-workbench',
+    ).length;
+    const unloadsBeforeOldCleanup = current.calls.filter(
+      (call) => call === 'unload-assets',
+    ).length;
+
+    await current.service.closeProject('project', 'old-page');
+
+    expect(
+      current.calls.filter((call) => call === 'close-workbench'),
+    ).toHaveLength(closesBeforeOldCleanup);
+    expect(
+      current.calls.filter((call) => call === 'unload-assets'),
+    ).toHaveLength(unloadsBeforeOldCleanup);
+
+    await current.service.closeProject('project', 'new-page');
+    expect(
+      current.calls.filter((call) => call === 'close-workbench'),
+    ).toHaveLength(closesBeforeOldCleanup + 1);
+    expect(
+      current.calls.filter((call) => call === 'unload-assets'),
+    ).toHaveLength(unloadsBeforeOldCleanup + 1);
   });
 
   it('waits for the previous Project runtime before loading another Project', async () => {
@@ -267,7 +299,7 @@ describe('ProjectService', () => {
       },
     );
 
-    const opening = current.service.openProject('project');
+    const opening = current.service.openProject('project', 'session-1');
     await vi.waitFor(() =>
       expect(finishGenerationUnload).toBeTypeOf('function'),
     );
@@ -361,7 +393,9 @@ describe('ProjectService', () => {
       },
     );
 
-    await expect(current.service.openProject('project')).rejects.toThrow(
+    await expect(
+      current.service.openProject('project', 'session-1'),
+    ).rejects.toThrow(
       'association load failed',
     );
     expect(current.calls).toEqual([

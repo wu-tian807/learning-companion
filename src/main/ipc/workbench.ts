@@ -46,7 +46,9 @@ export function registerWorkbenchHandlers(
         throw invalidRequest();
       }
 
-      return service.open(request.assetId);
+      return request.viewportId === undefined
+        ? service.open(request.assetId)
+        : service.open(request.assetId, request.viewportId);
     },
   );
 

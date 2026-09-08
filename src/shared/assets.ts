@@ -56,6 +56,11 @@ export interface AssetSnapshot extends Asset {
 export interface AssetChangedEvent {
   readonly projectId: string;
   readonly asset: AssetSnapshot;
+  /**
+   * Legacy senders omit this and are treated as updates only.  A renderer may
+   * add an unknown Asset to a loaded list exclusively for a verified create.
+   */
+  readonly change?: 'created' | 'updated';
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -204,6 +209,9 @@ export function isAssetChangedEvent(
     isRecord(value) &&
     isRequiredText(value.projectId) &&
     isAssetSnapshot(value.asset) &&
+    (value.change === undefined ||
+      value.change === 'created' ||
+      value.change === 'updated') &&
     value.asset.projectId === value.projectId
   );
 }

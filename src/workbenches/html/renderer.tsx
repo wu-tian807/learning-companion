@@ -138,6 +138,7 @@ export function HtmlWorkbenchView({
   onRefresh,
   onReveal,
   onInteractionChange,
+  onLocationSelectionChange,
   onOpenExternal,
   onError,
 }: RendererWorkbenchViewProps) {
@@ -161,6 +162,7 @@ export function HtmlWorkbenchView({
   const highlightTargetRef = useRef<HtmlAnchorTarget | undefined>(undefined);
   const highlightRevisionRef = useRef(0);
   const [editingStatus, setEditingStatus] = useState(payload?.editing);
+  const editingStatusRef = useRef(editingStatus);
   const [editCommandBusy, setEditCommandBusy] = useState(false);
   const [draftReview, setDraftReview] = useState<HtmlDraftReview>();
   const editingStatusRequestRef = useRef(0);
@@ -169,6 +171,30 @@ export function HtmlWorkbenchView({
   const frameKey = payload
     ? `${payload.contentUrl}:${frameRevision}`
     : 'invalid';
+  useEffect(() => {
+    editingStatusRef.current = editingStatus;
+  }, [editingStatus]);
+  const reportHtmlInteraction = useCallback(
+    (interaction: Parameters<typeof onInteractionChange>[0]) => {
+      onInteractionChange(interaction);
+      const selection = findTextSelectionInput(interaction);
+      if (
+        !selection ||
+        !payload?.sourceRevision ||
+        editingStatusRef.current?.hasDraft ||
+        editingStatusRef.current?.unsynced
+      ) {
+        onLocationSelectionChange?.(undefined);
+        return;
+      }
+      onLocationSelectionChange?.({
+        target: selection.target,
+        sourceRevision: payload.sourceRevision,
+        text: selection.text,
+      });
+    },
+    [onInteractionChange, onLocationSelectionChange, payload?.sourceRevision],
+  );
 
   const clearHighlight = useCallback(() => {
     const target = highlightTargetRef.current;
@@ -266,6 +292,7 @@ export function HtmlWorkbenchView({
           return true;
         },
       },
+      bootstrap.viewportId,
     );
   }, [asset.id, conversationOwnerId, frameKey, loadedFrameKey, payload?.sourceRevision, showHighlight]);
 
@@ -296,11 +323,11 @@ export function HtmlWorkbenchView({
   const reload = useCallback(() => {
     contextRef.current = undefined;
     clearHighlight();
-    onInteractionChange({ inputs: [] });
+    reportHtmlInteraction({ inputs: [] });
     setLoadedFrameKey(undefined);
     setFrameFailed(false);
     setFrameRevision((current) => current + 1);
-  }, [clearHighlight, onInteractionChange]);
+  }, [clearHighlight, reportHtmlInteraction]);
 
   const refreshEditingStatus = useCallback(async () => {
     const request = ++editingStatusRequestRef.current;
@@ -597,17 +624,17 @@ export function HtmlWorkbenchView({
             // iframe. Electron may publish the still-native selection again
             // with a different rect. It is already the active context, so do
             // not resurrect the consumed float bar or generic selection.
-            onInteractionChange({ inputs: [] });
+            reportHtmlInteraction({ inputs: [] });
             setPendingSelection(undefined);
             return;
           }
-          onInteractionChange(mapped.interaction);
+          reportHtmlInteraction(mapped.interaction);
           setPendingSelection(selection);
           return;
         }
 
         contextRef.current = mapped.context;
-        onInteractionChange(mapped.interaction);
+        reportHtmlInteraction(mapped.interaction);
         // 右键命中元素/文本锚点：进入对话的「待发送锚点」→ 持久显示红框，
         // 直到发送（onAnchorConsumed）或删除（chip ✕）或离开对话。
         const focusTarget = mapped.interaction.focus;
@@ -630,7 +657,7 @@ export function HtmlWorkbenchView({
   }, [
     bootstrap.sessionId,
     clearHighlight,
-    onInteractionChange,
+    reportHtmlInteraction,
     payload,
     reportAnchorError,
     runtime,
@@ -657,13 +684,13 @@ export function HtmlWorkbenchView({
 
   useEffect(() => {
     contextRef.current = undefined;
-    onInteractionChange({ inputs: [] });
+    reportHtmlInteraction({ inputs: [] });
     clearHighlight();
     setLoadedFrameKey(undefined);
     setFrameFailed(false);
     setEditingStatus(payload?.editing);
     setDraftReview(undefined);
-  }, [clearHighlight, onInteractionChange, payload?.contentUrl]);
+  }, [clearHighlight, payload?.contentUrl, reportHtmlInteraction]);
 
   if (!payload) {
     return (
@@ -774,6 +801,7 @@ const htmlRendererWorkbenchModule: RendererWorkbenchModule<
   typeof htmlWorkbenchManifest.id
 > = {
   manifest: htmlWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: HtmlWorkbenchView,
 };
 

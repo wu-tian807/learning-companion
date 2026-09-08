@@ -41,6 +41,12 @@ import type {
   SaveProjectConversationRequest,
 } from "../shared/project-conversations";
 import type {
+  CreateProjectNotebookRequest,
+  ProjectNotebookProjectRequest,
+  ProjectNotebookSnapshot,
+  SelectProjectNotebookAssetRequest,
+} from '../shared/project-notebook-assets';
+import type {
   CreateProjectRequest,
   ChangeProjectWorkspaceRequest,
   AgentProviderConnectionRequest,
@@ -64,6 +70,7 @@ import type {
   LearningCompanionApi,
   OpenExternalRequest,
   ProjectLifecycleRequest,
+  ProjectRuntimeSessionRequest,
   SelectProjectWorkspaceRequest,
   RelinkAssetRequest,
   RenameAssetRequest,
@@ -225,9 +232,9 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
     invoke<ProjectSnapshot>(IPC_CHANNELS.setProjectPinned, request),
   deleteProject: (request: DeleteProjectRequest) =>
     invoke<void>(IPC_CHANNELS.deleteProject, request),
-  openProject: (request: ProjectLifecycleRequest) =>
+  openProject: (request: ProjectRuntimeSessionRequest) =>
     invoke<AssetSnapshot[]>(IPC_CHANNELS.openProject, request),
-  closeProject: (request: ProjectLifecycleRequest) =>
+  closeProject: (request: ProjectRuntimeSessionRequest) =>
     invoke<void>(IPC_CHANNELS.closeProject, request),
   invokeWorkbenchAction: (request: WorkbenchActionRequest) =>
     invoke<JsonValue>(IPC_CHANNELS.invokeWorkbenchAction, request),
@@ -260,12 +267,25 @@ const api: LearningCompanionApi & WorkbenchFeaturePreloadApi = {
       IPC_CHANNELS.deleteProjectConversation,
       request,
     ),
+  getProjectNotebook: (request: ProjectNotebookProjectRequest) =>
+    invoke<ProjectNotebookSnapshot>(IPC_CHANNELS.getProjectNotebook, request),
+  createProjectNotebook: (request: CreateProjectNotebookRequest) =>
+    invoke<AssetSnapshot>(IPC_CHANNELS.createProjectNotebook, request),
+  selectProjectNotebookAsset: (
+    request: SelectProjectNotebookAssetRequest,
+  ) =>
+    invoke<ProjectNotebookSnapshot>(
+      IPC_CHANNELS.selectProjectNotebookAsset,
+      request,
+    ),
   selectLocalAssetFiles: (request: ProjectLifecycleRequest) =>
     invoke<string[]>(IPC_CHANNELS.selectLocalAssetFiles, request),
   addLocalAssets: (request: AddLocalAssetsRequest) =>
     invoke<AddLocalAssetsResult>(IPC_CHANNELS.addLocalAssets, request),
   renameAsset: (request: RenameAssetRequest) =>
     invoke<AssetSnapshot>(IPC_CHANNELS.renameAsset, request),
+  createMarkdownNote: (request) =>
+    invoke<AssetSnapshot>(IPC_CHANNELS.createMarkdownNote, request),
   relinkAsset: (request: RelinkAssetRequest) =>
     invoke<AssetSnapshot>(IPC_CHANNELS.relinkAsset, request),
   deleteAssets: (request: DeleteAssetsRequest) =>

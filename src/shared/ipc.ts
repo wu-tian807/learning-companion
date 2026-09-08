@@ -62,6 +62,12 @@ import type {
   ProjectConversationProjectRequest,
   SaveProjectConversationRequest,
 } from "./project-conversations";
+import type {
+  CreateProjectNotebookRequest,
+  ProjectNotebookProjectRequest,
+  ProjectNotebookSnapshot,
+  SelectProjectNotebookAssetRequest,
+} from './project-notebook-assets';
 
 export const IPC_CHANNELS = {
   healthCheck: "app:health-check",
@@ -106,9 +112,13 @@ export const IPC_CHANNELS = {
   rebuildBoundProjectConversation: "project-conversation:rebuild-bound",
   saveProjectConversation: "project-conversation:save",
   deleteProjectConversation: "project-conversation:delete",
+  getProjectNotebook: 'project-notebook:get',
+  createProjectNotebook: 'project-notebook:create',
+  selectProjectNotebookAsset: 'project-notebook:select-asset',
   selectLocalAssetFiles: "asset:select-local-files",
   addLocalAssets: "asset:add-local-files",
   renameAsset: "asset:rename",
+  createMarkdownNote: "asset:create-markdown-note",
   relinkAsset: "asset:relink",
   deleteAssets: "asset:delete-many",
   refreshAsset: "asset:refresh",
@@ -215,8 +225,8 @@ export interface LearningCompanionApi {
     request: SetProjectPinnedRequest,
   ) => Promise<ProjectSnapshot>;
   deleteProject: (request: DeleteProjectRequest) => Promise<void>;
-  openProject: (request: ProjectLifecycleRequest) => Promise<AssetSnapshot[]>;
-  closeProject: (request: ProjectLifecycleRequest) => Promise<void>;
+  openProject: (request: ProjectRuntimeSessionRequest) => Promise<AssetSnapshot[]>;
+  closeProject: (request: ProjectRuntimeSessionRequest) => Promise<void>;
   invokeWorkbenchAction: (
     request: WorkbenchActionRequest,
   ) => Promise<JsonValue>;
@@ -235,6 +245,15 @@ export interface LearningCompanionApi {
   deleteProjectConversation: (
     request: DeleteProjectConversationRequest,
   ) => Promise<ConversationRecord[]>;
+  getProjectNotebook: (
+    request: ProjectNotebookProjectRequest,
+  ) => Promise<ProjectNotebookSnapshot>;
+  createProjectNotebook: (
+    request: CreateProjectNotebookRequest,
+  ) => Promise<AssetSnapshot>;
+  selectProjectNotebookAsset: (
+    request: SelectProjectNotebookAssetRequest,
+  ) => Promise<ProjectNotebookSnapshot>;
   selectLocalAssetFiles: (
     request: ProjectLifecycleRequest,
   ) => Promise<string[]>;
@@ -242,6 +261,9 @@ export interface LearningCompanionApi {
     request: AddLocalAssetsRequest,
   ) => Promise<AddLocalAssetsResult>;
   renameAsset: (request: RenameAssetRequest) => Promise<AssetSnapshot>;
+  createMarkdownNote: (
+    request: CreateMarkdownNoteRequest,
+  ) => Promise<AssetSnapshot>;
   relinkAsset: (request: RelinkAssetRequest) => Promise<AssetSnapshot>;
   deleteAssets: (
     request: DeleteAssetsRequest,
@@ -391,6 +413,11 @@ export interface ProjectLifecycleRequest {
   projectId: string;
 }
 
+/** Identifies the Renderer page that owns the active in-memory Project. */
+export interface ProjectRuntimeSessionRequest extends ProjectLifecycleRequest {
+  sessionId: string;
+}
+
 export interface AddLocalAssetsRequest {
   projectId: string;
   paths: string[];
@@ -412,6 +439,12 @@ export interface AddLocalAssetsResult {
 export interface RenameAssetRequest {
   assetId: string;
   name: string;
+}
+
+export interface CreateMarkdownNoteRequest {
+  projectId: string;
+  /** Display name only; managed storage uses an opaque collision-safe file name. */
+  name?: string;
 }
 
 export interface RelinkAssetRequest {
@@ -613,6 +646,16 @@ export function isProjectLifecycleRequest(
   return isRecord(value) && isRequiredText(value.projectId);
 }
 
+export function isProjectRuntimeSessionRequest(
+  value: unknown,
+): value is ProjectRuntimeSessionRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.projectId) &&
+    isRequiredText(value.sessionId, 160)
+  );
+}
+
 export function isWorkbenchActionRequest(
   value: unknown,
 ): value is WorkbenchActionRequest {
@@ -707,6 +750,16 @@ export function isRenameAssetRequest(
     isRecord(value) &&
     isRequiredText(value.assetId) &&
     isRequiredText(value.name, ASSET_NAME_MAX_LENGTH)
+  );
+}
+
+export function isCreateMarkdownNoteRequest(
+  value: unknown,
+): value is CreateMarkdownNoteRequest {
+  return (
+    isRecord(value) &&
+    isRequiredText(value.projectId) &&
+    (value.name === undefined || isRequiredText(value.name, ASSET_NAME_MAX_LENGTH))
   );
 }
 

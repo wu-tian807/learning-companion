@@ -5,7 +5,11 @@ import {
   isAssetWorkbenchManifest,
   type AssetWorkbenchManifest,
 } from '../../shared/workbench/manifest';
-import { createCoreWorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/core-facilities';
+import {
+  CORE_FACILITY_VERSION,
+  CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID,
+  createCoreWorkbenchFacilityDefinitionRegistry,
+} from '../../shared/workbench/facilities/core-facilities';
 import type { WorkbenchFacilityDefinitionRegistry } from '../../shared/workbench/facilities/facility-definition-registry';
 import type {
   WorkbenchBootstrap,
@@ -16,6 +20,14 @@ import type {
 import type { WorkbenchInteractionSnapshot } from '../../shared/workbench/interaction';
 import type { AssetSnapshot } from '../../shared/assets';
 import type { AssetAttachment } from '../../shared/attachments/contracts';
+import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
+
+/** A frozen selection exported by a Workbench; target semantics stay local. */
+export interface WorkbenchLocationSelection {
+  readonly target: ContentAssetTarget;
+  readonly sourceRevision: string;
+  readonly text: string;
+}
 
 export interface RendererWorkbenchViewProps {
   readonly asset: AssetSnapshot;
@@ -33,9 +45,18 @@ export interface RendererWorkbenchViewProps {
   readonly onReveal: () => Promise<void> | void;
   /** Select another Asset in the owning Project. */
   readonly onSelectAsset?: (assetId: string) => Promise<void> | void;
+  /**
+   * Project-scoped location navigation. It intentionally outlives a source
+   * view that is replaced while the destination Asset opens.
+   */
+  readonly onOpenWorkbenchLocation?: (href: string) => Promise<void>;
   readonly onOpenSettings?: () => void;
   readonly onInteractionChange: (
     interaction: WorkbenchInteractionSnapshot,
+  ) => void;
+  /** Passing undefined invalidates this viewport's last exported selection. */
+  readonly onLocationSelectionChange?: (
+    selection: WorkbenchLocationSelection | undefined,
   ) => void;
   readonly onOpenExternal: (url: string) => Promise<void>;
   readonly onError: (message: string) => void;
@@ -45,6 +66,8 @@ export interface RendererWorkbenchModule<
   TId extends string = string,
 > {
   readonly manifest: AssetWorkbenchManifest<TId>;
+  /** Must agree with the manifest when this view exports direct references. */
+  readonly locationReferenceExport?: 'selection';
   readonly View: ComponentType<RendererWorkbenchViewProps>;
 }
 
@@ -179,6 +202,14 @@ export class RendererWorkbenchRegistry {
 
   private validateModule(module: RendererWorkbenchModule): void {
     this.validateManifest(module.manifest);
+    const declaresLocationExport = module.manifest.facilities.some(
+      (facility) =>
+        facility.id === CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID &&
+        facility.version === CORE_FACILITY_VERSION,
+    );
+    if (declaresLocationExport !== (module.locationReferenceExport === 'selection')) {
+      throw new Error('Renderer Workbench 位置引用导出声明不一致');
+    }
   }
 
   private validateManifest(manifest: AssetWorkbenchManifest): void {

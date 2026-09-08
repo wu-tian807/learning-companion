@@ -6,6 +6,7 @@ import {
   isCreateProjectRequest,
   isDeleteProjectRequest,
   isProjectLifecycleRequest,
+  isProjectRuntimeSessionRequest,
   isRenameProjectRequest,
   isSelectProjectWorkspaceRequest,
   isSetProjectPinnedRequest,
@@ -28,22 +29,22 @@ export function registerProjectHandlers(
   registerIpcHandler(
     IPC_CHANNELS.openProject,
     async (_event, request: unknown) => {
-      if (!isProjectLifecycleRequest(request)) {
+      if (!isProjectRuntimeSessionRequest(request)) {
         throw invalidRequest();
       }
 
-      return projectService.openProject(request.projectId);
+      return projectService.openProject(request.projectId, request.sessionId);
     },
   );
 
   registerIpcHandler(
     IPC_CHANNELS.closeProject,
     async (_event, request: unknown) => {
-      if (!isProjectLifecycleRequest(request)) {
+      if (!isProjectRuntimeSessionRequest(request)) {
         throw invalidRequest();
       }
 
-      await projectService.closeProject(request.projectId);
+      await projectService.closeProject(request.projectId, request.sessionId);
     },
   );
 

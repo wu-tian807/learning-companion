@@ -8,4 +8,5 @@ export const markdownMainWorkbenchContribution =
     new MarkdownWorkbenchProvider(
       context.stateDatabase,
       context.stateDataDatabase,
+      { workbenchEvents: context.workbenchEvents },
     ), [markdownMainFeature]);

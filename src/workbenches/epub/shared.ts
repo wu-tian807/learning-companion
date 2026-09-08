@@ -6,6 +6,7 @@ import {
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
+  createLocationReferenceSelectionExportFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
   rendererTransportFacilityDeclaration,
 } from '../../shared/workbench/facilities/core-facilities';
@@ -34,6 +35,9 @@ export const epubWorkbenchManifest: AssetWorkbenchManifest<
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
     createTextSelectionInputFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
+    createLocationReferenceSelectionExportFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
   ],

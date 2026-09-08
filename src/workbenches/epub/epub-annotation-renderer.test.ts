@@ -71,4 +71,5 @@ describe('EPUB annotation renderer', () => {
       'highlight',
     );
   });
+
 });

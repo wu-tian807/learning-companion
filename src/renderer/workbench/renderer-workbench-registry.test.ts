@@ -6,6 +6,7 @@ import {
   RendererWorkbenchRegistry,
 } from './renderer-workbench-registry';
 import { unsupportedRendererWorkbenchModule } from '../../workbenches/unsupported/renderer';
+import { markdownWorkbenchManifest } from '../../workbenches/markdown/shared';
 
 function TestView() {
   return null;
@@ -104,6 +105,23 @@ describe('RendererWorkbenchRegistry', () => {
     expect(() =>
       registry.register(unsupportedRendererWorkbenchModule),
     ).toThrow('Renderer Workbench 重复注册');
+  });
+
+  it('requires a selection exporter to agree with its manifest', () => {
+    const registry = new RendererWorkbenchRegistry(
+      unsupportedRendererWorkbenchModule,
+    );
+
+    expect(() => registry.register({
+      manifest: markdownWorkbenchManifest,
+      View: TestView,
+    })).toThrow('位置引用导出声明不一致');
+
+    expect(() => registry.register({
+      manifest: markdownWorkbenchManifest,
+      locationReferenceExport: 'selection',
+      View: TestView,
+    })).not.toThrow();
   });
 
   it('checks the Main bootstrap against the Renderer contract', () => {

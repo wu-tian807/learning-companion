@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { markdown } from '@codemirror/lang-markdown';
+import { Transaction } from '@codemirror/state';
 import { EditorView, type ViewUpdate } from '@codemirror/view';
 import CodeMirror, {
   type ReactCodeMirrorRef,
@@ -18,6 +19,9 @@ import './markdown-workbench.css';
 import { createEditorActionPreset } from '../../renderer/workbench/actions/editor-action-preset';
 import { CodeMirrorEditorActionAdapter } from '../../renderer/workbench/editor/codemirror-action-adapter';
 import { useWorkbenchRuntime } from '../../renderer/workbench/runtime/workbench-runtime-context';
+import {
+  getLatestWorkbenchLocationSnapshot,
+} from '../../renderer/workbench/location-snapshot-store';
 import type {
   RendererWorkbenchModule,
   RendererWorkbenchViewProps,
@@ -40,10 +44,16 @@ import {
 } from '../document-ai/renderer/conversation/document-target-reveal';
 import {
   registerWorkbenchTargetController,
+  selectAndRevealWorkbenchTarget,
 } from '../../renderer/workbench/host/workbench-target-bridge';
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import type { AssetTarget } from '../../shared/workbench/asset-target';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
+import {
+  createWorkbenchLocationHref,
+  parseWorkbenchLocationHref,
+} from '../../shared/workbench/location-reference';
 import {
   createTextRangeTarget,
   resolveTextRangeSelection,
@@ -63,7 +73,10 @@ import {
   isMarkdownInsertImageResult,
   isMarkdownLineEndingResult,
   isMarkdownReadImageResult,
+  isMarkdownReadConflictStateResult,
   isMarkdownReopenResult,
+  isMarkdownResolveConflictResult,
+  isMarkdownAdoptSharedResult,
   isMarkdownSaveResult,
   isMarkdownSaveViewStateResult,
   isMarkdownWorkbenchPayload,
@@ -83,17 +96,15 @@ import {
   type MarkdownEditMode,
   type MarkdownEncoding,
   type MarkdownLineEnding,
+  type MarkdownReadConflictStateResult,
+  type MarkdownConflictBackupResult,
   type MarkdownSourceViewState,
   type MarkdownWorkbenchViewState,
 } from './shared';
 import {
   createMarkdownRendererActions,
 } from './renderer-actions';
-
-type VisualEditorState =
-  | 'loading'
-  | 'ready'
-  | 'failed';
+import { useMarkdownVisualEditor } from './use-markdown-visual-editor';
 
 async function fileToBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -105,6 +116,41 @@ async function fileToBase64(file: File): Promise<string> {
     );
   }
   return btoa(binary);
+}
+
+function markdownLocationLinkLabel(text: string): string {
+  const compact = text.replace(/\s+/gu, ' ').trim().slice(0, 160);
+  const label = compact || '原文位置';
+  return label
+    .replaceAll('\\', '\\\\')
+    .replaceAll('[', '\\[')
+    .replaceAll(']', '\\]');
+}
+
+/** Returns a portable location href only when the click lies inside its link. */
+export function markdownLocationHrefAt(
+  line: string,
+  offset: number,
+): string | undefined {
+  const expression = /\[[^\]]*\]\((#[^\s)]+)\)/gu;
+  for (const match of line.matchAll(expression)) {
+    const href = match[1];
+    if (!href || match.index === undefined) continue;
+    const hrefStart = match.index + match[0].lastIndexOf(href);
+    if (offset >= hrefStart && offset < hrefStart + href.length &&
+      parseWorkbenchLocationHref(href)) {
+      return href;
+    }
+  }
+  return undefined;
+}
+
+function projectLocationReference(
+  href: string,
+  projectId: string,
+) {
+  const modern = parseWorkbenchLocationHref(href);
+  return modern?.projectId === projectId ? modern : undefined;
 }
 
 function findMarkdownImageByCandidates(
@@ -289,6 +335,37 @@ function MarkdownRecoveryDialog({
   );
 }
 
+type MarkdownConflictUiState = {
+  /** An owned Main recovery entry used for resolve/adopt. */
+  readonly conflictId?: string;
+  readonly sharedContent: string;
+  readonly expectedDocumentVersion: number;
+  readonly backups: readonly MarkdownConflictBackupResult[];
+  readonly selectedBackupId?: string;
+  /** A peer advanced after the user compared the shown shared content. */
+  readonly newerShared?: {
+    readonly content: string;
+    readonly documentVersion: number;
+  };
+};
+
+type MarkdownInsertionBookmark =
+  | {
+      readonly kind: 'source';
+      readonly assetId: string;
+      readonly generation: number;
+      readonly view: EditorView;
+      readonly from: number;
+      readonly to: number;
+    }
+  | {
+      readonly kind: 'wysiwyg';
+      readonly assetId: string;
+      readonly generation: number;
+      readonly adapter: MarkdownEditorAdapter;
+      readonly range: Range;
+    };
+
 export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const {
@@ -297,7 +374,11 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     executeCommand,
     onReveal,
     onInteractionChange,
+    onLocationSelectionChange,
     onOpenExternal,
+    onSelectAsset,
+    onOpenWorkbenchLocation,
+    subscribeEvent,
     onError,
     attachments,
     refreshAttachments,
@@ -306,6 +387,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     ? bootstrap.payload
     : undefined;
   const [sourceRevision, setSourceRevision] = useState(payload?.revision ?? '');
+  const documentVersionRef = useRef(payload?.documentVersion ?? 0);
+  const nextDocumentUpdateIdRef = useRef(0);
+  const pendingDocumentSyncsRef = useRef(0);
+  const syncConflictRef = useRef(false);
   const initialViewState =
     payload?.state ??
     ({
@@ -315,13 +400,23 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       outlineVisible: false,
     } satisfies MarkdownWorkbenchViewState);
   const sourceEditorRef = useRef<ReactCodeMirrorRef>(null);
-  const wysiwygHostRef = useRef<HTMLDivElement>(null);
+  const openWorkbenchLocationRef = useRef<
+    ((href: string) => Promise<void>) | undefined
+  >(undefined);
+  const insertionBookmarkRef = useRef<MarkdownInsertionBookmark | undefined>(
+    undefined,
+  );
   const imageInputRef = useRef<HTMLInputElement>(null);
   const wysiwygAdapterRef = useRef<MarkdownEditorAdapter | undefined>(
     undefined,
   );
-  const wysiwygInitializationRef = useRef(0);
-  const workingBufferRef = useRef(payload?.diskSource ?? '');
+  const workingBufferRef = useRef(
+    payload?.workingBuffer ?? payload?.diskSource ?? '',
+  );
+  const sourceInitialValueRef = useRef(
+    payload?.workingBuffer ?? payload?.diskSource ?? '',
+  );
+  const applyingRemoteSourceRef = useRef(false);
   const lineEndingRef = useRef<MarkdownLineEnding>(
     payload?.lineEnding ?? 'lf',
   );
@@ -337,7 +432,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     ((relativePath: string) => void) | undefined
   >(undefined);
   const [workingBuffer, setWorkingBuffer] = useState(
-    payload?.diskSource ?? '',
+    payload?.workingBuffer ?? payload?.diskSource ?? '',
   );
   const [diskSource, setDiskSource] = useState(
     payload?.diskSource ?? '',
@@ -353,16 +448,219 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const [viewState, setViewState] = useState<MarkdownWorkbenchViewState>(
     initialViewState,
   );
-  const [visualEditorState, setVisualEditorState] =
-    useState<VisualEditorState>('loading');
   const [recovery, setRecovery] = useState(payload?.recovery);
   const [recoveryBusy, setRecoveryBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sourceEditorKey, setSourceEditorKey] = useState(0);
   const [wysiwygEditorKey, setWysiwygEditorKey] = useState(0);
   const [cursor, setCursor] = useState('第 1 行，第 1 列');
+  const [syncConflict, setSyncConflict] = useState<string | undefined>();
+  /**
+   * This is intentionally separate from documentVersionRef. The latter tracks
+   * ordinary document events; a conflict CAS is against the shared snapshot
+   * the user actually compared while editing the merge draft.
+   */
+  const conflictStateRef = useRef<MarkdownConflictUiState | undefined>(undefined);
+  const [conflictState, setConflictState] = useState<
+    MarkdownConflictUiState | undefined
+  >();
   const dirty =
     workingBuffer !== diskSource || lineEnding !== savedLineEnding;
+
+  const reportMarkdownInteraction = useCallback(
+    (interaction: Parameters<typeof onInteractionChange>[0]) => {
+      onInteractionChange(interaction);
+
+      const selection = findTextSelectionInput(interaction);
+      if (
+        !selection ||
+        workingBufferRef.current !== diskSource ||
+        lineEndingRef.current !== savedLineEnding ||
+        !sourceRevision
+      ) {
+        onLocationSelectionChange?.(undefined);
+        return;
+      }
+
+      onLocationSelectionChange?.({
+        target: selection.target,
+        sourceRevision,
+        text: selection.text,
+      });
+    },
+    [diskSource, onInteractionChange, onLocationSelectionChange, savedLineEnding, sourceRevision],
+  );
+
+  const updateConflictState = useCallback(
+    (next: MarkdownConflictUiState | undefined) => {
+      conflictStateRef.current = next;
+      setConflictState(next);
+    },
+    [],
+  );
+
+  const readConflictState = useCallback(async () => {
+    const result = await executeCommand({
+      type: markdownCommands.readConflictState,
+    });
+    if (!isMarkdownReadConflictStateResult(result.payload)) {
+      throw new Error('Markdown Workbench 冲突状态响应无效');
+    }
+    return result.payload as MarkdownReadConflictStateResult;
+  }, [executeCommand]);
+
+  const loadConflictState = useCallback(async (
+    message: string,
+    options?: {
+      readonly preferredConflictId?: string;
+      /** Keep the comparison immutable but disclose a newer shared version. */
+      readonly preserveComparison?: boolean;
+    },
+  ) => {
+    syncConflictRef.current = true;
+    setSyncConflict(message);
+    const result = await readConflictState();
+    const current = conflictStateRef.current;
+    const conflictId = options?.preferredConflictId ?? current?.conflictId ??
+      result.conflicts.find((item) => 'content' in item)?.conflictId ??
+      result.conflicts[0]?.conflictId;
+    if (options?.preserveComparison && current) {
+      updateConflictState({
+        ...current,
+        backups: result.conflicts,
+        newerShared: {
+          content: result.sharedContent,
+          documentVersion: result.documentVersion,
+        },
+      });
+      return result;
+    }
+    updateConflictState({
+      conflictId,
+      sharedContent: result.sharedContent,
+      expectedDocumentVersion: result.documentVersion,
+      backups: result.conflicts,
+      selectedBackupId: conflictId,
+    });
+    return result;
+  }, [readConflictState, updateConflictState]);
+
+  useEffect(() => {
+    if (!subscribeEvent) return;
+    return subscribeEvent((event) => {
+      if (
+        event.type !== 'markdown:document-changed' ||
+        typeof event.payload !== 'object' ||
+        event.payload === null ||
+        Array.isArray(event.payload)
+      ) {
+        return;
+      }
+      const change = event.payload as Readonly<Record<string, unknown>>;
+      if (
+        typeof change.content !== 'string' ||
+        typeof change.diskSource !== 'string' ||
+        (change.lineEnding !== 'lf' && change.lineEnding !== 'crlf') ||
+        (change.savedLineEnding !== 'lf' && change.savedLineEnding !== 'crlf') ||
+        typeof change.revision !== 'string' ||
+        typeof change.dirty !== 'boolean' ||
+        typeof change.documentVersion !== 'number' ||
+        !Number.isSafeInteger(change.documentVersion) ||
+        change.documentVersion <= documentVersionRef.current
+      ) {
+        return;
+      }
+      if (pendingDocumentSyncsRef.current > 0) {
+        syncConflictRef.current = true;
+        setSyncConflict(
+          '另一视口已修改此 Markdown；当前草稿已保留，请先处理冲突后再保存。',
+        );
+        updateConflictState({
+          conflictId: conflictStateRef.current?.conflictId,
+          sharedContent: change.content,
+          expectedDocumentVersion: change.documentVersion,
+          backups: conflictStateRef.current?.backups ?? [],
+          selectedBackupId: conflictStateRef.current?.selectedBackupId,
+        });
+        return;
+      }
+      // A rejected local version is a persistent conflict, not a transient
+      // pending request. Keep the draft intact across every later peer event.
+      if (syncConflictRef.current) {
+        documentVersionRef.current = Math.max(
+          documentVersionRef.current,
+          change.documentVersion,
+        );
+        const currentConflict = conflictStateRef.current;
+        if (currentConflict) {
+          updateConflictState({
+            ...currentConflict,
+            newerShared: {
+              content: change.content,
+              documentVersion: change.documentVersion,
+            },
+          });
+        }
+        // Peer disk transitions are still useful as a dirty baseline. They
+        // must never replace the locally editable merge draft.
+        setDiskSource(change.diskSource);
+        setSavedLineEnding(change.savedLineEnding);
+        setSourceRevision(change.revision);
+        return;
+      }
+      // Never remount an editor for a peer update: that loses undo/IME and
+      // local cursor state. CodeMirror receives a transaction; Vditor's
+      // adapter suppresses its input callback while applying the value.
+      if (viewStateRef.current.viewMode === 'source') {
+        const editor = sourceEditorRef.current?.view;
+        if (editor && !editor.composing) {
+          applyingRemoteSourceRef.current = true;
+          const current = editor.state.doc.toString();
+          let prefix = 0;
+          while (
+            prefix < current.length &&
+            prefix < change.content.length &&
+            current[prefix] === change.content[prefix]
+          ) {
+            prefix += 1;
+          }
+          let suffix = 0;
+          while (
+            suffix < current.length - prefix &&
+            suffix < change.content.length - prefix &&
+            current[current.length - suffix - 1] ===
+              change.content[change.content.length - suffix - 1]
+          ) {
+            suffix += 1;
+          }
+          editor.dispatch({
+            changes: {
+              from: prefix,
+              to: current.length - suffix,
+              insert: change.content.slice(
+                prefix,
+                change.content.length - suffix,
+              ),
+            },
+            annotations: Transaction.addToHistory.of(false),
+          });
+          queueMicrotask(() => {
+            applyingRemoteSourceRef.current = false;
+          });
+        }
+      } else {
+        wysiwygAdapterRef.current?.setValue(change.content);
+      }
+      documentVersionRef.current = change.documentVersion;
+      workingBufferRef.current = change.content;
+      lineEndingRef.current = change.lineEnding;
+      setWorkingBuffer(change.content);
+      setDiskSource(change.diskSource);
+      setLineEnding(change.lineEnding);
+      setSavedLineEnding(change.savedLineEnding);
+      setSourceRevision(change.revision);
+    });
+  }, [subscribeEvent, updateConflictState]);
 
   const reportError = useCallback(
     (error: unknown, fallback: string) => {
@@ -376,6 +674,22 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [onError],
   );
 
+  useEffect(() => {
+    const conflict = payload?.conflictRecovery;
+    if (!conflict) return;
+    void loadConflictState(
+      '发现一份未解决的 Markdown 冲突草稿。请选择恢复后手动合并，或采用共享版本。',
+      { preferredConflictId: conflict.conflictId },
+    ).catch((error) => {
+      reportError(error, '无法读取 Markdown 冲突草稿。');
+    });
+  }, [
+    bootstrap.sessionId,
+    loadConflictState,
+    payload?.conflictRecovery?.conflictId,
+    reportError,
+  ]);
+
   const sourceExtensions = useMemo(() => {
     const extensions = [markdown(), markdownSourceTheme];
 
@@ -385,6 +699,28 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
     return extensions;
   }, [viewState.wordWrap]);
+
+  const sourceLocationLinkExtension = useMemo(
+    () => EditorView.domEventHandlers({
+      click(event, view) {
+        if (!(event.ctrlKey || event.metaKey)) return false;
+        const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (position === null) return false;
+        const line = view.state.doc.lineAt(position);
+        const href = markdownLocationHrefAt(
+          line.text,
+          position - line.from,
+        );
+        if (!href || !projectLocationReference(href, asset.projectId)) {
+          return false;
+        }
+        event.preventDefault();
+        void openWorkbenchLocationRef.current?.(href);
+        return true;
+      },
+    }),
+    [asset.projectId],
+  );
 
   const sourceEditorActionAdapter = useMemo(
     () =>
@@ -434,6 +770,14 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         event.clientX,
         event.clientY,
       );
+      const view = sourceEditorRef.current?.view;
+      const range = view?.state.selection.main;
+      insertionBookmarkRef.current = view && range
+        ? {
+            kind: 'source', assetId: asset.id, generation: sourceEditorKey,
+            view, from: range.from, to: range.to,
+          }
+        : undefined;
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
@@ -443,8 +787,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     },
     [
       bootstrap.sessionId,
+      asset.id,
       recovery,
       runtime,
+      sourceEditorKey,
       sourceEditorActionAdapter,
     ],
   );
@@ -461,8 +807,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   );
 
   const configuredSourceExtensions = useMemo(
-    () => [...sourceExtensions, sourceContextMenuExtension],
-    [sourceContextMenuExtension, sourceExtensions],
+    () => [
+      ...sourceExtensions,
+      sourceContextMenuExtension,
+      sourceLocationLinkExtension,
+    ],
+    [sourceContextMenuExtension, sourceExtensions, sourceLocationLinkExtension],
   );
 
   const applyViewState = useCallback(
@@ -535,31 +885,199 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       content: string,
       sourceViewState: MarkdownSourceViewState,
     ) => {
-      const result = await executeCommand(
-        createMarkdownSyncSourceCommand({
+      pendingDocumentSyncsRef.current += 1;
+      try {
+        const result = await executeCommand(
+          createMarkdownSyncSourceCommand({
           content,
           lineEnding: lineEndingRef.current,
           sourceViewState,
-        }),
-      );
-      return acceptSyncResult(result);
+          baseDocumentVersion: documentVersionRef.current,
+          updateId: ++nextDocumentUpdateIdRef.current,
+          }),
+        );
+        const accepted = acceptSyncResult(result);
+        if (accepted.documentVersion !== undefined) {
+          documentVersionRef.current = Math.max(
+            documentVersionRef.current,
+            accepted.documentVersion,
+          );
+        }
+        return accepted;
+      } catch (error) {
+        await loadConflictState(
+          '本地草稿与另一视口冲突，草稿已保留。请手动合并后应用合并结果，或采用共享版本。',
+        );
+        throw error;
+      } finally {
+        pendingDocumentSyncsRef.current -= 1;
+      }
     },
-    [acceptSyncResult, executeCommand],
+    [acceptSyncResult, executeCommand, loadConflictState],
   );
 
   const syncWysiwygBuffer = useCallback(
     async (content: string, scrollTop: number) => {
-      const result = await executeCommand(
-        createMarkdownSyncWysiwygCommand({
+      pendingDocumentSyncsRef.current += 1;
+      try {
+        const result = await executeCommand(
+          createMarkdownSyncWysiwygCommand({
           content,
           lineEnding: lineEndingRef.current,
           wysiwygScrollTop: scrollTop,
-        }),
-      );
-      return acceptSyncResult(result);
+          baseDocumentVersion: documentVersionRef.current,
+          updateId: ++nextDocumentUpdateIdRef.current,
+          }),
+        );
+        const accepted = acceptSyncResult(result);
+        if (accepted.documentVersion !== undefined) {
+          documentVersionRef.current = Math.max(
+            documentVersionRef.current,
+            accepted.documentVersion,
+          );
+        }
+        return accepted;
+      } catch (error) {
+        await loadConflictState(
+          '本地草稿与另一视口冲突，草稿已保留。请手动合并后应用合并结果，或采用共享版本。',
+        );
+        throw error;
+      } finally {
+        pendingDocumentSyncsRef.current -= 1;
+      }
     },
-    [acceptSyncResult, executeCommand],
+    [acceptSyncResult, executeCommand, loadConflictState],
   );
+
+  const replaceConflictDraft = useCallback((content: string) => {
+    const editor = sourceEditorRef.current?.view;
+    if (editor?.composing) {
+      throw new Error('请先完成当前输入法组合，再恢复冲突草稿。');
+    }
+    workingBufferRef.current = content;
+    sourceInitialValueRef.current = content;
+    setWorkingBuffer(content);
+    if (viewStateRef.current.viewMode === 'source' && editor) {
+      applyingRemoteSourceRef.current = true;
+      editor.dispatch({
+        changes: { from: 0, to: editor.state.doc.length, insert: content },
+        annotations: Transaction.addToHistory.of(false),
+      });
+      queueMicrotask(() => {
+        applyingRemoteSourceRef.current = false;
+      });
+      return;
+    }
+    // Recovery is intentionally edited in Source mode. This makes both the
+    // local draft and the read-only shared snapshot visible, while normal
+    // WYSIWYG editing remains available outside conflict handling.
+    applyViewState({
+      ...viewStateRef.current,
+      viewMode: 'source',
+    });
+  }, [applyViewState]);
+
+  const refreshConflictComparison = useCallback(async () => {
+    try {
+      await loadConflictState(
+        '共享版本已刷新。请确认合并内容后再应用。',
+        { preferredConflictId: conflictStateRef.current?.conflictId },
+      );
+    } catch (error) {
+      reportError(error, '无法刷新 Markdown 共享版本。');
+    }
+  }, [loadConflictState, reportError]);
+
+  const restoreConflictBackup = useCallback((conflictId: string) => {
+    const conflict = conflictStateRef.current;
+    const backup = conflict?.backups.find(
+      (item) => item.conflictId === conflictId,
+    );
+    if (!conflict || !backup || !('content' in backup)) {
+      reportError(
+        new Error('该冲突备份已不可读取，无法恢复。'),
+        '无法恢复 Markdown 冲突草稿。',
+      );
+      return;
+    }
+    try {
+      replaceConflictDraft(backup.content);
+      updateConflictState({
+        ...conflict,
+        selectedBackupId: conflictId,
+      });
+    } catch (error) {
+      reportError(error, '无法恢复 Markdown 冲突草稿。');
+    }
+  }, [replaceConflictDraft, reportError, updateConflictState]);
+
+  const applyConflictMerge = useCallback(async () => {
+    const conflict = conflictStateRef.current;
+    if (!conflict?.conflictId) {
+      reportError(new Error('缺少可解决的冲突草稿。'), '无法应用 Markdown 合并结果。');
+      return;
+    }
+    if (conflict.newerShared) {
+      setSyncConflict('共享版本在对照后已更新；请先刷新共享对照并重新确认合并结果。');
+      return;
+    }
+    try {
+      const result = await executeCommand({
+        type: markdownCommands.resolveConflict,
+        payload: {
+          conflictId: conflict.conflictId,
+          expectedDocumentVersion: conflict.expectedDocumentVersion,
+          content: workingBufferRef.current,
+        },
+      });
+      if (!isMarkdownResolveConflictResult(result.payload)) {
+        throw new Error('Markdown Workbench 合并响应无效');
+      }
+      documentVersionRef.current = result.payload.documentVersion;
+      syncConflictRef.current = false;
+      setSyncConflict(undefined);
+      updateConflictState(undefined);
+    } catch (error) {
+      // Main persisted this newest merge candidate before rejecting stale CAS.
+      // Refresh only the disclosed latest snapshot; never replace the draft.
+      try {
+        await loadConflictState(
+          '共享版本在应用期间又发生变化；最新合并稿已备份，请刷新对照后重新确认。',
+          {
+            preferredConflictId: conflict.conflictId,
+            preserveComparison: true,
+          },
+        );
+      } catch (readError) {
+        reportError(readError, '无法读取 Markdown 最新冲突状态。');
+      }
+      reportError(error, '无法应用 Markdown 合并结果。');
+    }
+  }, [executeCommand, loadConflictState, reportError, updateConflictState]);
+
+  const adoptSharedConflict = useCallback(async () => {
+    const conflict = conflictStateRef.current;
+    if (!conflict?.conflictId) {
+      reportError(new Error('缺少可采用的共享版本。'), '无法采用 Markdown 共享版本。');
+      return;
+    }
+    try {
+      const result = await executeCommand({
+        type: markdownCommands.adoptShared,
+        payload: { conflictId: conflict.conflictId },
+      });
+      if (!isMarkdownAdoptSharedResult(result.payload)) {
+        throw new Error('Markdown Workbench 采用共享版本响应无效');
+      }
+      replaceConflictDraft(result.payload.sharedContent);
+      documentVersionRef.current = result.payload.documentVersion;
+      syncConflictRef.current = false;
+      setSyncConflict(undefined);
+      updateConflictState(undefined);
+    } catch (error) {
+      reportError(error, '无法采用 Markdown 共享版本。');
+    }
+  }, [executeCommand, replaceConflictDraft, reportError, updateConflictState]);
 
   const readMarkdownImageDataUrl = useCallback(
     async (relativePath: string): Promise<string | undefined> => {
@@ -580,6 +1098,106 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     },
     [executeCommand],
   );
+
+  // Used only by the compatibility fallback below. Project hosts provide the
+  // public navigator, whose lifetime is intentionally longer than this view.
+  const locationNavigationRef = useRef<AbortController | undefined>(undefined);
+  const openWorkbenchLocation = useCallback(
+    async (href: string) => {
+      if (onOpenWorkbenchLocation) {
+        await onOpenWorkbenchLocation(href);
+        return;
+      }
+      const reference = projectLocationReference(href, asset.projectId);
+      if (!reference) {
+        throw new Error('这条位置引用不属于当前 Project。');
+      }
+      if (!onSelectAsset) {
+        throw new Error('当前 Markdown 视口不能打开引用资料。');
+      }
+      locationNavigationRef.current?.abort(
+        new DOMException('已开始新的 Markdown 定位。', 'AbortError'),
+      );
+      const controller = new AbortController();
+      locationNavigationRef.current = controller;
+      try {
+        await selectAndRevealWorkbenchTarget({
+          assetId: reference.assetId,
+          target: reference.target,
+          ...(reference.sourceRevision
+            ? { sourceRevision: reference.sourceRevision }
+            : {}),
+          selectAsset: onSelectAsset,
+          signal: controller.signal,
+          timeoutMs: 10_000,
+          emphasize: true,
+        });
+      } finally {
+        if (locationNavigationRef.current === controller) {
+          locationNavigationRef.current = undefined;
+        }
+      }
+    },
+    [asset.projectId, onOpenWorkbenchLocation, onSelectAsset],
+  );
+
+  useEffect(() => {
+    openWorkbenchLocationRef.current = openWorkbenchLocation;
+    return () => {
+      if (openWorkbenchLocationRef.current === openWorkbenchLocation) {
+        openWorkbenchLocationRef.current = undefined;
+      }
+    };
+  }, [openWorkbenchLocation]);
+
+  const insertLocationReference = useCallback(async () => {
+    const snapshot = getLatestWorkbenchLocationSnapshot(asset.projectId);
+    if (!snapshot) {
+      onError('请先在资料工作台中选中可定位的内容。');
+      return;
+    }
+    const href = createWorkbenchLocationHref(snapshot.reference);
+    const markdown = `[${markdownLocationLinkLabel(snapshot.text)}](${href})`;
+    const bookmark = insertionBookmarkRef.current;
+    if (!bookmark || bookmark.assetId !== asset.id) {
+      throw new Error('插入位置已失效，请在目标 Markdown 中重新打开菜单。');
+    }
+
+    if (bookmark.kind === 'source') {
+      if (
+        viewStateRef.current.viewMode !== 'source' ||
+        bookmark.generation !== sourceEditorKey ||
+        sourceEditorRef.current?.view !== bookmark.view
+      ) {
+        throw new Error('目标 Markdown 源码编辑器已切换，请重新打开菜单。');
+      }
+      bookmark.view.dispatch({
+        changes: { from: bookmark.from, to: bookmark.to, insert: markdown },
+        selection: { anchor: bookmark.from + markdown.length },
+        scrollIntoView: true,
+      });
+      bookmark.view.focus();
+      return;
+    }
+
+    if (
+      viewStateRef.current.viewMode !== 'wysiwyg' ||
+      bookmark.generation !== wysiwygEditorKey ||
+      wysiwygAdapterRef.current !== bookmark.adapter
+    ) {
+      throw new Error('目标 Markdown 可视化编辑器已切换，请重新打开菜单。');
+    }
+    const element = bookmark.adapter.getEditableElement();
+    if (!element || !element.contains(bookmark.range.startContainer) ||
+      !element.contains(bookmark.range.endContainer)) {
+      throw new Error('目标 Markdown 插入位置已失效，请重新打开菜单。');
+    }
+    element.focus();
+    const selection = element.ownerDocument.defaultView?.getSelection();
+    selection?.removeAllRanges();
+    selection?.addRange(bookmark.range.cloneRange());
+    bookmark.adapter.insertMarkdown(markdown);
+  }, [asset.id, asset.projectId, onError, sourceEditorKey, wysiwygEditorKey]);
 
   const resolvePickedImageMediaType = useCallback(
     (file: File) => {
@@ -671,129 +1289,64 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [insertLocalImage],
   );
 
-  useEffect(() => {
-    if (
-      !payload ||
-      recovery ||
-      viewState.viewMode !== 'wysiwyg' ||
-      !wysiwygHostRef.current
-    ) {
-      return;
-    }
-
-    let active = true;
-    const initialization = ++wysiwygInitializationRef.current;
-    const abortController = new AbortController();
-    setVisualEditorState('loading');
-    wysiwygEditedSinceMountRef.current = false;
-    const host = wysiwygHostRef.current;
-    const editorHost = document.createElement('div');
-    editorHost.style.height = '100%';
-    editorHost.style.minHeight = '0';
-    host.replaceChildren(editorHost);
-    let ownedAdapter: MarkdownEditorAdapter | undefined;
-
-    void MarkdownEditorAdapter.create({
-      host: editorHost,
-      initialValue: workingBufferRef.current,
-      initialScrollTop: viewStateRef.current.wysiwygScrollTop,
-      outlineVisible: viewStateRef.current.outlineVisible,
-      onInput: (value) => {
-        if (
-          !active ||
-          wysiwygInitializationRef.current !== initialization
-        ) {
-          return;
-        }
-
-        const adapter = wysiwygAdapterRef.current;
-        const normalizedValue = adapter
-          ? adapter.normalizeImageSourcesForSource(value)
-          : value;
-        const scrollTop = adapter?.getScrollTop() ?? 0;
-        workingBufferRef.current = normalizedValue;
-        wysiwygEditedSinceMountRef.current = true;
-        setWorkingBuffer(normalizedValue);
-        void syncWysiwygBuffer(normalizedValue, scrollTop).catch(
-          (error) => {
-            reportError(error, '无法同步 Markdown 可视化编辑内容。');
-          },
-        );
-      },
-      onScroll: (scrollTop) => {
-        if (
-          !active ||
-          wysiwygInitializationRef.current !== initialization
-        ) {
-          return;
-        }
-
-        runtime.closeContextMenu();
-        scheduleViewStateSave({
-          ...viewStateRef.current,
-          viewMode: 'wysiwyg',
-          wysiwygScrollTop: scrollTop,
-        });
-      },
-      onOpenExternal: (url) => {
-        void onOpenExternal(url).catch((error) => {
-          reportError(error, '无法打开外部链接。');
-        });
-      },
-      readLocalImageSource: readMarkdownImageDataUrl,
-      onError: (error) => {
-        reportError(error, 'Markdown 可视化编辑器运行异常。');
-      },
-      signal: abortController.signal,
-    })
-      .then((adapter) => {
-        ownedAdapter = adapter;
-        if (
-          !active ||
-          wysiwygInitializationRef.current !== initialization
-        ) {
-          adapter.destroy();
-          return;
-        }
-
-        wysiwygAdapterRef.current = adapter;
-        setVisualEditorState('ready');
-      })
-      .catch((error) => {
-        if (
-          !active ||
-          wysiwygInitializationRef.current !== initialization ||
-          (error instanceof DOMException && error.name === 'AbortError')
-        ) {
-          return;
-        }
-
-        editorHost.replaceChildren();
-        setVisualEditorState('failed');
-        reportError(error, '无法启动 Markdown 可视化编辑器。');
+  const {
+    hostRef: wysiwygHostRef,
+    state: visualEditorState,
+  } = useMarkdownVisualEditor({
+    enabled:
+      Boolean(payload) &&
+      !recovery &&
+      viewState.viewMode === 'wysiwyg',
+    resetKey: wysiwygEditorKey,
+    initialValue: workingBufferRef.current,
+    initialScrollTop: viewStateRef.current.wysiwygScrollTop,
+    outlineVisible: viewStateRef.current.outlineVisible,
+    onInput: (value) => {
+      const adapter = wysiwygAdapterRef.current;
+      const normalizedValue = adapter
+        ? adapter.normalizeImageSourcesForSource(value)
+        : value;
+      const scrollTop = adapter?.getScrollTop() ?? 0;
+      workingBufferRef.current = normalizedValue;
+      wysiwygEditedSinceMountRef.current = true;
+      setWorkingBuffer(normalizedValue);
+      void syncWysiwygBuffer(normalizedValue, scrollTop).catch(
+        (error) => {
+          reportError(error, '无法同步 Markdown 可视化编辑内容。');
+        },
+      );
+    },
+    onScroll: (scrollTop) => {
+      runtime.closeContextMenu();
+      scheduleViewStateSave({
+        ...viewStateRef.current,
+        viewMode: 'wysiwyg',
+        wysiwygScrollTop: scrollTop,
       });
-
-    return () => {
-      active = false;
-      abortController.abort();
-      if (wysiwygAdapterRef.current === ownedAdapter) {
-        wysiwygAdapterRef.current = undefined;
+    },
+    onOpenExternal: (url) => {
+      void onOpenExternal(url).catch((error) => {
+        reportError(error, '无法打开外部链接。');
+      });
+    },
+    isInternalLinkAllowed: (href) =>
+      projectLocationReference(href, asset.projectId) !== undefined,
+    onOpenInternalLink: (href) => {
+      void openWorkbenchLocation(href).catch((error) => {
+        reportError(error, '无法定位 Markdown 中的资料引用。');
+      });
+    },
+    readLocalImageSource: readMarkdownImageDataUrl,
+    onError: (error) => {
+      reportError(error, 'Markdown 可视化编辑器运行异常。');
+    },
+    onAdapterChange: (adapter) => {
+      wysiwygAdapterRef.current = adapter;
+      if (adapter) {
+        wysiwygEditedSinceMountRef.current = false;
       }
-      ownedAdapter?.destroy();
-      editorHost.remove();
-    };
-  }, [
-    onOpenExternal,
-    payload,
-    readMarkdownImageDataUrl,
-    recovery,
-    reportError,
-    runtime,
-    scheduleViewStateSave,
-    syncWysiwygBuffer,
-    viewState.viewMode,
-    wysiwygEditorKey,
-  ]);
+    },
+  });
 
   useEffect(() => {
     if (
@@ -830,6 +1383,17 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           event.clientX,
           event.clientY,
         );
+      const adapter = wysiwygAdapterRef.current;
+      const selection = element.ownerDocument.defaultView?.getSelection();
+      const range = selection?.rangeCount
+        ? selection.getRangeAt(0).cloneRange()
+        : undefined;
+      insertionBookmarkRef.current = adapter && range
+        ? {
+            kind: 'wysiwyg', assetId: asset.id,
+            generation: wysiwygEditorKey, adapter, range,
+          }
+        : undefined;
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
@@ -854,7 +1418,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         return;
       }
 
-      onInteractionChange(
+      reportMarkdownInteraction(
         wysiwygEditorActionAdapter.captureInteraction(),
       );
     };
@@ -875,11 +1439,13 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     };
   }, [
     bootstrap.sessionId,
-    onInteractionChange,
+    asset.id,
+    reportMarkdownInteraction,
     recovery,
     runtime,
     visualEditorState,
     viewState.viewMode,
+    wysiwygEditorKey,
     wysiwygEditorActionAdapter,
   ]);
 
@@ -925,11 +1491,12 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           ...viewStateRef.current,
           viewMode: mode,
         };
-        onInteractionChange({ inputs: [] });
+        reportMarkdownInteraction({ inputs: [] });
         applyViewState(next);
         await persistViewState(next);
 
         if (mode === 'source') {
+          sourceInitialValueRef.current = workingBufferRef.current;
           setSourceEditorKey((current) => current + 1);
         } else {
           setWysiwygEditorKey((current) => current + 1);
@@ -942,7 +1509,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [
       applyViewState,
       bootstrap.sessionId,
-      onInteractionChange,
+      reportMarkdownInteraction,
       persistViewState,
       recovery,
       reportError,
@@ -978,13 +1545,15 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   }, [dirty, syncSourceBuffer, syncWysiwygBuffer]);
 
   const save = useCallback(async () => {
-    if (!dirty || saving || recovery) {
+    if (!dirty || saving || recovery || syncConflictRef.current) {
       return;
     }
 
     setSaving(true);
     try {
       await flushCurrentBuffer();
+      const submittedBuffer = workingBufferRef.current;
+      const submittedLineEnding = lineEndingRef.current;
 
       const result = await executeCommand({
         type: markdownCommands.save,
@@ -995,8 +1564,8 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         'Markdown Workbench 保存响应无效',
       );
       setSourceRevision(result.payload.revision);
-      setDiskSource(workingBufferRef.current);
-      setSavedLineEnding(lineEndingRef.current);
+      setDiskSource(submittedBuffer);
+      setSavedLineEnding(submittedLineEnding);
       wysiwygEditedSinceMountRef.current = false;
     } catch (error) {
       reportError(error, '无法保存 Markdown 文件。');
@@ -1008,6 +1577,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     executeCommand,
     flushCurrentBuffer,
     recovery,
+    syncConflict,
     reportError,
     saving,
   ]);
@@ -1031,6 +1601,9 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
 
   const onSourceChange = useCallback(
     (value: string, update: ViewUpdate) => {
+      if (applyingRemoteSourceRef.current) {
+        return;
+      }
       const sourceState = sourceViewStateFromUpdate(update);
       workingBufferRef.current = value;
       setWorkingBuffer(value);
@@ -1051,7 +1624,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
   const onSourceUpdate = useCallback(
     (update: ViewUpdate) => {
       if (update.selectionSet) {
-        onInteractionChange(
+        reportMarkdownInteraction(
           sourceEditorActionAdapter.captureInteraction(),
         );
       }
@@ -1085,7 +1658,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       });
     },
     [
-      onInteractionChange,
+      reportMarkdownInteraction,
       runtime,
       scheduleViewStateSave,
       sourceEditorActionAdapter,
@@ -1129,6 +1702,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       await persistViewState(nextViewState);
       setRecovery(undefined);
       if (mode === 'source') {
+        sourceInitialValueRef.current = workingBufferRef.current;
         setSourceEditorKey((current) => current + 1);
       } else {
         setWysiwygEditorKey((current) => current + 1);
@@ -1214,6 +1788,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         setLineEnding(result.payload.lineEnding);
         setSavedLineEnding(result.payload.lineEnding);
         if (viewStateRef.current.viewMode === 'source') {
+          sourceInitialValueRef.current = workingBufferRef.current;
           setSourceEditorKey((current) => current + 1);
         } else {
           setWysiwygEditorKey((current) => current + 1);
@@ -1477,7 +2052,10 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
       `${conversationOwnerId}.targets`,
       asset.id,
       {
-        sourceRevision,
+        // A dirty editor no longer materializes the revision on disk. Do not
+        // let direct-reference navigation claim it can reveal that stale file
+        // revision against the unsaved local document.
+        ...(dirty ? {} : { sourceRevision }),
         resolve(target) {
           return resolveMarkdownTargetRect(target);
         },
@@ -1549,6 +2127,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           return false;
         },
       },
+      bootstrap.viewportId,
     );
   }, [
     asset.id,
@@ -1557,6 +2136,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     revealMarkdownSelection,
     revealMarkdownText,
     sourceRevision,
+    dirty,
   ]);
 
   const rendererActions = useMemo(
@@ -1578,6 +2158,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             }),
           });
         },
+        onInsertLocationReference: insertLocationReference,
         onSetEncoding: reopenWithEncoding,
         onSetLineEnding: updateLineEnding,
         onSetViewState: updateViewState,
@@ -1586,6 +2167,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
     [
       dirty,
       encoding,
+      insertLocationReference,
       lineEnding,
       activeEditorActionAdapter,
       asset.id,
@@ -1650,6 +2232,20 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
             ))}
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {payload.conflictBackupsAvailable && !syncConflict ? (
+            <button
+              type="button"
+              disabled={Boolean(recovery) || saving}
+              onClick={() =>
+                void loadConflictState(
+                  '已打开保留的冲突草稿。请选择草稿后在源码模式手动合并。',
+                )
+              }
+              className="ui-control h-[28px] rounded-lg border border-amber-200/20 px-3 text-[10px] font-medium text-amber-100 disabled:cursor-not-allowed disabled:opacity-35"
+            >
+              恢复冲突草稿
+            </button>
+          ) : null}
           <button
             type="button"
             disabled={Boolean(recovery) || saving}
@@ -1661,7 +2257,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
           </button>
           <button
             type="button"
-            disabled={!dirty || saving || Boolean(recovery)}
+            disabled={!dirty || saving || Boolean(recovery) || Boolean(syncConflict)}
             onClick={() => void save()}
             className="ui-control h-[28px] rounded-lg border border-white/[0.09] px-3 text-[10px] font-medium text-slate-300 disabled:cursor-not-allowed disabled:opacity-35"
             title="保存 Markdown（⌘/Ctrl + S）"
@@ -1671,6 +2267,70 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
         </div>
       </div>
 
+      {syncConflict ? (
+        <div role="alert" className="border-b border-amber-300/20 bg-amber-100/10 px-3 py-2 text-xs text-amber-100">
+          {syncConflict}
+          <p className="mt-1">普通保存已锁定；请在源码模式手动合并后应用合并结果，或采用共享版本。</p>
+          {conflictState ? (
+            <div className="mt-2 grid gap-2 rounded border border-amber-200/20 bg-black/10 p-2 text-[11px] text-amber-50">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>共享对照版本 v{conflictState.expectedDocumentVersion}</span>
+                {conflictState.newerShared ? (
+                  <span className="text-amber-200">
+                    已发现较新的共享版本 v{conflictState.newerShared.documentVersion}，请刷新后重新确认。
+                  </span>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void refreshConflictComparison()}
+                  className="ui-control rounded border border-amber-100/20 px-2 py-1 text-amber-50"
+                >
+                  刷新共享对照
+                </button>
+              </div>
+              <pre aria-label="冲突共享版本" className="max-h-28 overflow-auto whitespace-pre-wrap rounded bg-black/20 p-2 font-mono text-[10px] text-slate-200">
+                {conflictState.sharedContent}
+              </pre>
+              <div className="flex flex-wrap items-center gap-2">
+                <label>
+                  冲突草稿
+                  <select
+                    aria-label="冲突草稿备份"
+                    className="ml-1 rounded bg-slate-900 px-1 py-0.5 text-slate-100"
+                    value={conflictState.selectedBackupId ?? ''}
+                    onChange={(event) => restoreConflictBackup(event.currentTarget.value)}
+                  >
+                    {conflictState.backups.map((backup) => (
+                      <option key={backup.conflictId} value={backup.conflictId} disabled={'unavailable' in backup}>
+                        {'content' in backup
+                          ? `可恢复草稿 ${backup.conflictId.slice(0, 8)}`
+                          : `不可读取草稿 ${backup.conflictId.slice(0, 8)}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={!conflictState.conflictId || Boolean(conflictState.newerShared)}
+                  onClick={() => void applyConflictMerge()}
+                  className="ui-primary-button rounded bg-amber-100 px-2 py-1 font-medium text-slate-900 disabled:opacity-45"
+                >
+                  应用合并结果
+                </button>
+                <button
+                  type="button"
+                  disabled={!conflictState.conflictId}
+                  onClick={() => void adoptSharedConflict()}
+                  className="ui-control rounded border border-amber-100/20 px-2 py-1 text-amber-50 disabled:opacity-45"
+                >
+                  保留备份并采用共享版本
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="relative min-h-0 flex-1">
         {viewState.viewMode === 'source' ? (
           <div className="relative h-full min-h-0 overflow-hidden">
@@ -1678,7 +2338,7 @@ export function MarkdownWorkbenchView(props: RendererWorkbenchViewProps) {
               key={sourceEditorKey}
               ref={sourceEditorRef}
               aria-label="Markdown 源码编辑器"
-              value={workingBuffer}
+              value={sourceInitialValueRef.current}
               height="100%"
               theme="none"
               extensions={configuredSourceExtensions}
@@ -1801,5 +2461,6 @@ export const markdownRendererWorkbenchModule: RendererWorkbenchModule<
   typeof markdownWorkbenchManifest.id
 > = {
   manifest: markdownWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: MarkdownWorkbenchView,
 };

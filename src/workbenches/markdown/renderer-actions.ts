@@ -18,6 +18,7 @@ export interface MarkdownRendererActionsOptions {
     text: string,
     target: ContentAssetTarget,
   ) => Promise<void> | void;
+  readonly onInsertLocationReference: () => Promise<void> | void;
   readonly onSetEncoding: (encoding: MarkdownEncoding) => Promise<void>;
   readonly onSetLineEnding: (
     lineEnding: MarkdownLineEnding,
@@ -36,6 +37,7 @@ export function createMarkdownRendererActions({
   viewState,
   hasSelection,
   onAiExplain,
+  onInsertLocationReference,
   onSetEncoding,
   onSetLineEnding,
   onSetViewState,
@@ -84,6 +86,11 @@ export function createMarkdownRendererActions({
         id: 'markdown.reveal',
         enabled: true,
         execute: onReveal,
+      },
+      {
+        id: 'markdown.insert-location-reference',
+        enabled: true,
+        execute: onInsertLocationReference,
       },
       {
         id: 'markdown.ai.explain-selection',
@@ -170,6 +177,19 @@ export function createMarkdownRendererActions({
         presentation: {
           kind: 'action',
           label: '在文件夹中显示',
+          closePolicy: 'on-success',
+        },
+      },
+      {
+        id: 'markdown.insert-location-reference.context-menu',
+        actionId: 'markdown.insert-location-reference',
+        surface: 'context-menu',
+        group: '70-reference',
+        groupLabel: '引用',
+        order: 10,
+        presentation: {
+          kind: 'action',
+          label: '插入已选原文位置引用',
           closePolicy: 'on-success',
         },
       },

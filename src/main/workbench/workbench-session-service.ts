@@ -23,7 +23,7 @@ export interface WorkbenchSessionLifecycle {
 
 export interface WorkbenchSessionServiceApi
   extends WorkbenchSessionLifecycle {
-  open(assetId: string): Promise<WorkbenchBootstrap>;
+  open(assetId: string, viewportId?: string): Promise<WorkbenchBootstrap>;
   command(
     sessionId: string,
     command: WorkbenchCommand,
@@ -40,13 +40,21 @@ export interface WorkbenchSessionServiceDependencies {
 export class WorkbenchSessionService
   implements WorkbenchSessionServiceApi
 {
-  private activeSession: AssetWorkbenchSession | undefined;
-  private pendingOpenController: AbortController | undefined;
+  private readonly sessionsByViewport = new Map<
+    string,
+    AssetWorkbenchSession
+  >();
+  /** Retain a small retired set so callers can distinguish stale from unknown. */
+  private readonly retiredSessionIds: string[] = [];
+  private readonly pendingOpenControllers = new Map<
+    string,
+    AbortController
+  >();
+  private readonly lifecycleVersions = new Map<string, number>();
   private readonly pendingCommands = new Map<
     string,
     Set<Promise<WorkbenchCommandResult>>
   >();
-  private lifecycleVersion = 0;
   private readonly createId: () => string;
   private readonly transportBindingRegistry:
     | WorkbenchTransportBindingRegistryApi
@@ -68,13 +76,16 @@ export class WorkbenchSessionService
       dependencies.transportBindingRegistry;
   }
 
-  async open(assetId: string): Promise<WorkbenchBootstrap> {
-    this.pendingOpenController?.abort();
+  async open(
+    assetId: string,
+    viewportId = 'primary-material',
+  ): Promise<WorkbenchBootstrap> {
+    const normalizedViewportId = this.normalizeViewportId(viewportId);
+    this.pendingOpenControllers.get(normalizedViewportId)?.abort();
     const abortController = new AbortController();
-    this.pendingOpenController = abortController;
-    const openVersion = this.lifecycleVersion + 1;
-    this.lifecycleVersion = openVersion;
-    await this.disposeActiveSession();
+    this.pendingOpenControllers.set(normalizedViewportId, abortController);
+    const openVersion = this.nextLifecycleVersion(normalizedViewportId);
+    await this.disposeViewportSession(normalizedViewportId);
     const snapshot = this.assetService.get(assetId);
 
     if (!snapshot) {
@@ -83,7 +94,7 @@ export class WorkbenchSessionService
 
     const content = await this.assetService.resolveContent(assetId);
 
-    if (this.lifecycleVersion !== openVersion) {
+    if (!this.isCurrentOpen(normalizedViewportId, openVersion, abortController)) {
       await content.handle?.close();
       throw new AppError('OPERATION_SUPERSEDED');
     }
@@ -109,7 +120,7 @@ export class WorkbenchSessionService
     };
     const context = toWorkbenchProviderContext(session);
 
-    if (this.lifecycleVersion !== openVersion) {
+    if (!this.isCurrentOpen(normalizedViewportId, openVersion, abortController)) {
       await this.disposeSession(session);
       throw new AppError('OPERATION_SUPERSEDED');
     }
@@ -123,7 +134,7 @@ export class WorkbenchSessionService
       throw error;
     }
 
-    if (this.lifecycleVersion !== openVersion) {
+    if (!this.isCurrentOpen(normalizedViewportId, openVersion, abortController)) {
       await this.disposeSession(session, context);
       throw new AppError('OPERATION_SUPERSEDED');
     }
@@ -155,13 +166,14 @@ export class WorkbenchSessionService
       throw error;
     }
 
-    this.activeSession = session;
-    if (this.pendingOpenController === abortController) {
-      this.pendingOpenController = undefined;
+    this.sessionsByViewport.set(normalizedViewportId, session);
+    if (this.pendingOpenControllers.get(normalizedViewportId) === abortController) {
+      this.pendingOpenControllers.delete(normalizedViewportId);
     }
 
     return {
       sessionId: session.id,
+      viewportId: normalizedViewportId,
       workbenchId: session.workbenchId,
       workbenchVersion: session.provider.manifest.version,
       protocolVersion: session.provider.manifest.protocolVersion,
@@ -176,14 +188,15 @@ export class WorkbenchSessionService
     sessionId: string,
     command: WorkbenchCommand,
   ): Promise<WorkbenchCommandResult> {
-    const session = this.activeSession;
+    const session = this.findSession(sessionId);
 
     if (!session) {
-      throw new AppError('WORKBENCH_SESSION_NOT_FOUND');
-    }
-
-    if (session.id !== sessionId) {
-      throw new AppError('WORKBENCH_SESSION_EXPIRED');
+      throw new AppError(
+        this.retiredSessionIds.includes(sessionId) ||
+          this.sessionsByViewport.size > 0
+          ? 'WORKBENCH_SESSION_EXPIRED'
+          : 'WORKBENCH_SESSION_NOT_FOUND',
+      );
     }
 
     const execution = session.provider.command(
@@ -208,41 +221,84 @@ export class WorkbenchSessionService
   }
 
   async close(sessionId: string): Promise<void> {
-    const session = this.activeSession;
-
-    if (!session || session.id !== sessionId) {
+    const session = this.findSession(sessionId);
+    if (!session) {
       return;
     }
-
-    this.lifecycleVersion += 1;
-    this.activeSession = undefined;
+    const viewportId = this.viewportForSession(sessionId);
+    if (!viewportId) return;
+    this.nextLifecycleVersion(viewportId);
+    this.sessionsByViewport.delete(viewportId);
+    this.rememberRetiredSession(session.id);
     await this.disposeSession(session);
   }
 
   async closeActive(): Promise<void> {
-    this.pendingOpenController?.abort();
-    this.pendingOpenController = undefined;
-
-    if (!this.activeSession) {
-      this.lifecycleVersion += 1;
-      return;
-    }
-
-    this.lifecycleVersion += 1;
-    await this.disposeActiveSession();
+    const pending = [...this.pendingOpenControllers.values()];
+    this.pendingOpenControllers.clear();
+    for (const controller of pending) controller.abort();
+    const sessions = [...this.sessionsByViewport.entries()];
+    this.sessionsByViewport.clear();
+    for (const [viewportId] of sessions) this.nextLifecycleVersion(viewportId);
+    for (const [, session] of sessions) this.rememberRetiredSession(session.id);
+    await Promise.all(sessions.map(([, session]) => this.disposeSession(session)));
   }
 
   getActiveSessionId(): string | undefined {
-    return this.activeSession?.id;
+    return this.sessionsByViewport.get('primary-material')?.id;
   }
 
-  private async disposeActiveSession(): Promise<void> {
-    const session = this.activeSession;
-    this.activeSession = undefined;
+  private async disposeViewportSession(viewportId: string): Promise<void> {
+    const session = this.sessionsByViewport.get(viewportId);
+    this.sessionsByViewport.delete(viewportId);
 
     if (session) {
+      this.rememberRetiredSession(session.id);
       await this.disposeSession(session);
     }
+  }
+
+  private normalizeViewportId(viewportId: string): string {
+    const normalized = viewportId.trim();
+    if (!normalized) throw new AppError('INVALID_IPC_REQUEST');
+    return normalized;
+  }
+
+  private nextLifecycleVersion(viewportId: string): number {
+    const version = (this.lifecycleVersions.get(viewportId) ?? 0) + 1;
+    this.lifecycleVersions.set(viewportId, version);
+    return version;
+  }
+
+  private isCurrentOpen(
+    viewportId: string,
+    version: number,
+    controller: AbortController,
+  ): boolean {
+    return (
+      !controller.signal.aborted &&
+      this.lifecycleVersions.get(viewportId) === version &&
+      this.pendingOpenControllers.get(viewportId) === controller
+    );
+  }
+
+  private findSession(sessionId: string): AssetWorkbenchSession | undefined {
+    for (const session of this.sessionsByViewport.values()) {
+      if (session.id === sessionId) return session;
+    }
+    return undefined;
+  }
+
+  private viewportForSession(sessionId: string): string | undefined {
+    for (const [viewportId, session] of this.sessionsByViewport) {
+      if (session.id === sessionId) return viewportId;
+    }
+    return undefined;
+  }
+
+  private rememberRetiredSession(sessionId: string): void {
+    this.retiredSessionIds.push(sessionId);
+    if (this.retiredSessionIds.length > 128) this.retiredSessionIds.shift();
   }
 
   private async disposeSession(

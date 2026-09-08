@@ -39,14 +39,39 @@ export function useProjectSession(
   const projectLifecycleTaskRef = useRef<Promise<void>>(
     Promise.resolve(),
   );
+  const runtimeSessionIdRef = useRef(crypto.randomUUID());
   const workbenchLifecycleTaskRef = useRef<Promise<void>>(
     Promise.resolve(),
   );
+  const pendingWorkbenchLifecycleTasks = useRef(new Set<Promise<void>>());
+  const refreshWorkbenchLifecycleAggregate = useCallback(() => {
+    const pending = [...pendingWorkbenchLifecycleTasks.current];
+    workbenchLifecycleTaskRef.current = Promise.allSettled(pending).then(
+      (results) => {
+        const failed = results.find(
+          (result): result is PromiseRejectedResult =>
+            result.status === 'rejected',
+        );
+        if (failed) {
+          const message = userMessageFromError(
+            failed.reason,
+            '某个资料视口未能完成关闭前的恢复保存。',
+          );
+          if (message) onError(message);
+        }
+      },
+    );
+  }, [onError]);
   const handleWorkbenchLifecycleTask = useCallback(
     (task: Promise<void>) => {
-      workbenchLifecycleTaskRef.current = task;
+      pendingWorkbenchLifecycleTasks.current.add(task);
+      refreshWorkbenchLifecycleAggregate();
+      void task.finally(() => {
+        pendingWorkbenchLifecycleTasks.current.delete(task);
+        refreshWorkbenchLifecycleAggregate();
+      }).catch(() => undefined);
     },
-    [],
+    [refreshWorkbenchLifecycleAggregate],
   );
   const selectAsset = useCallback((assetId: string | null) => {
     setSelectedAssetId(assetId);
@@ -58,6 +83,7 @@ export function useProjectSession(
 
   useEffect(() => {
     let active = true;
+    const runtimeSessionId = runtimeSessionIdRef.current;
     const previousProjectLifecycle = projectLifecycleTaskRef.current;
 
     const open = async () => {
@@ -70,6 +96,7 @@ export function useProjectSession(
 
         const assets = await window.learningCompanion.openProject({
           projectId,
+          sessionId: runtimeSessionId,
         });
 
         if (!isAssetSnapshotList(assets)) {
@@ -111,7 +138,10 @@ export function useProjectSession(
         workbenchLifecycleTask,
       ])
         .then(() =>
-          window.learningCompanion.closeProject({ projectId }),
+          window.learningCompanion.closeProject({
+            projectId,
+            sessionId: runtimeSessionId,
+          }),
         )
         .catch((closeError: unknown) => {
           const message = userMessageFromError(

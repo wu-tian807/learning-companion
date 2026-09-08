@@ -37,6 +37,9 @@ import {
   detectAssetMediaType,
   isAssetRelinkMediaCompatible,
 } from './asset-media-type';
+import { randomUUID } from 'node:crypto';
+
+export const MARKDOWN_ASSET_MEDIA_TYPE = 'text/markdown';
 
 export interface AssetServiceApi {
   loadFromProject(projectId: string): Promise<readonly AssetSnapshot[]>;
@@ -72,6 +75,12 @@ export interface AssetServiceApi {
     projectId: string,
     input: StageGeneratedAssetFileInput,
   ): Promise<StagedGeneratedAsset>;
+  /** Creates a managed empty Markdown Asset without involving generation or AI. */
+  createMarkdownNote(
+    projectId: string,
+    name?: string,
+    initialMarkdown?: string,
+  ): Promise<AssetSnapshot>;
   update(
     assetId: string,
     changes: UpdateAssetInput,
@@ -546,28 +555,36 @@ export class AssetService implements AssetServiceApi {
       input.fileName,
       input.content,
     );
-    this.requireUnchangedProject(lifecycleVersion, projectId);
-    const existing = [...this.runtimeMap.values()].find((asset) =>
-      isSameContentRef(asset.contentRef, generated.contentRef),
-    );
-
-    if (existing) {
-      if (
-        existing.creationKind !== 'generated' ||
-        existing.mediaType !== input.mediaType
-      ) {
-        throw new AppError('DATA_INTEGRITY_ERROR');
-      }
-
-      return Object.freeze({
-        asset: cloneAssetSnapshot(existing),
-        created: false,
-      });
-    }
-
     let resolved: ResolvedAssetContent | undefined;
 
     try {
+      // This check must be protected by the cleanup path: createGeneratedFile
+      // may have already materialized a managed file when a Project switch
+      // supersedes the request.
+      this.requireUnchangedProject(lifecycleVersion, projectId);
+      const existing = [...this.runtimeMap.values()].find((asset) =>
+        isSameContentRef(asset.contentRef, generated.contentRef),
+      );
+
+      if (existing) {
+        if (
+          existing.creationKind !== 'generated' ||
+          existing.mediaType !== input.mediaType
+        ) {
+          throw new AppError('DATA_INTEGRITY_ERROR');
+        }
+        return Object.freeze({
+          asset: cloneAssetSnapshot(existing),
+          created: false,
+        });
+      }
+
+      // Generic generated output is idempotent only when its Asset is already
+      // registered above. Never adopt an unknown pre-existing managed file.
+      if (!generated.created) {
+        throw new AppError('REGISTRATION_CONFLICT');
+      }
+
       resolved = await this.resolverRegistry.resolve(
         generated.contentRef,
         context,
@@ -599,6 +616,7 @@ export class AssetService implements AssetServiceApi {
       });
       const snapshot = createSnapshot(asset, resolved);
       this.runtimeMap.set(asset.id, snapshot);
+      this.publishChanged(snapshot, 'created');
 
       return Object.freeze({
         asset: cloneAssetSnapshot(snapshot),
@@ -622,6 +640,36 @@ export class AssetService implements AssetServiceApi {
     } finally {
       await resolved?.handle?.close();
     }
+  }
+
+  async createMarkdownNote(
+    projectId: string,
+    name = '新建笔记',
+    initialMarkdown = '',
+  ): Promise<AssetSnapshot> {
+    const normalizedName = name.trim();
+    // The display name may intentionally duplicate another note.  The managed
+    // filename must not: generated storage is an implementation detail and
+    // receives an opaque id rather than using user-controlled text.
+    if (
+      !normalizedName ||
+      [...normalizedName].length > 160 ||
+      typeof initialMarkdown !== 'string'
+    ) {
+      throw new AppError('INVALID_IPC_REQUEST');
+    }
+    const staged = await this.stageGeneratedFile(projectId, {
+      fileName: `note-${randomUUID()}.md`,
+      name: normalizedName,
+      mediaType: MARKDOWN_ASSET_MEDIA_TYPE,
+      content: new TextEncoder().encode(initialMarkdown),
+    });
+    if (!staged.created) {
+      // UUID collisions are not a normal idempotency path.  Returning another
+      // note would violate the new-note contract, so fail explicitly.
+      throw new AppError('REGISTRATION_CONFLICT');
+    }
+    return staged.asset;
   }
 
   update(
@@ -1028,10 +1076,14 @@ export class AssetService implements AssetServiceApi {
     }
   }
 
-  private publishChanged(snapshot: AssetSnapshot): void {
+  private publishChanged(
+    snapshot: AssetSnapshot,
+    change: 'created' | 'updated' = 'updated',
+  ): void {
     const event: AssetChangedEvent = Object.freeze({
       projectId: snapshot.projectId,
       asset: cloneAssetSnapshot(snapshot),
+      ...(change === 'created' ? { change } : {}),
     });
 
     for (const listener of this.listeners) {

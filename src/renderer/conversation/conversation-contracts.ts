@@ -97,6 +97,8 @@ export interface WorkbenchConversationContribution {
 
 export interface ConversationLaunchRequest {
   readonly id: number;
+  /** Visual Workbench that owns this transient source; never persist it in chat. */
+  readonly sourceOwnerId?: string;
   readonly conversationId?: string;
   readonly modeId?: string;
   readonly boundAssetId?: string;

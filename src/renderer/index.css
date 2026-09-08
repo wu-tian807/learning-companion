@@ -31,6 +31,18 @@ select {
   font: inherit;
 }
 
+select,
+select:focus,
+select:active {
+  color-scheme: dark;
+}
+
+select option,
+select optgroup {
+  color: #cbd5e1;
+  background-color: #20262e;
+}
+
 @keyframes external-library-indeterminate {
   from {
     transform: translateX(-100%);

@@ -23,6 +23,7 @@ interface ActiveRegistration {
 }
 
 interface PendingLaunch {
+  readonly ownerId?: string;
   readonly resolve: () => void;
   readonly reject: (error: unknown) => void;
   timer?: ReturnType<typeof setTimeout>;
@@ -56,7 +57,17 @@ function matchesSource(
 export class WorkbenchConversationRuntime {
   private readonly listeners = new Set<() => void>();
   private readonly pendingLaunches = new Map<number, PendingLaunch>();
+  private readonly consumedLaunchOwners = new Map<number, string | undefined>();
+  /**
+   * The panel may already have consumed a launch while another viewport became
+   * the visual active registration. Keep that transient context's owner
+   * separately: neither `activeRegistration` nor `launchRequest` is its
+   * authority after consumption.
+   */
+  private transientContextRequestId: number | undefined;
   private activeRegistration: ActiveRegistration | undefined;
+  /** All mounted Workbench sources, keyed by their visual owner. */
+  private readonly registrations = new Map<string, ActiveRegistration>();
   private launchId = 0;
   private revealAbortController: AbortController | undefined;
   private snapshot: WorkbenchConversationRuntimeSnapshot = Object.freeze({
@@ -92,34 +103,61 @@ export class WorkbenchConversationRuntime {
       assetId: normalizedAssetId,
       contribution,
     });
-    this.activeRegistration = Object.freeze({
+    const registration = Object.freeze({
       token,
       ownerId: normalizedOwnerId,
       source,
     });
+    this.registrations.set(normalizedOwnerId, registration);
+    this.activeRegistration = registration;
     this.update({ ...this.snapshot, active: source });
 
     return () => {
       queueMicrotask(() => {
-        if (this.activeRegistration?.token !== token) return;
-        this.activeRegistration = undefined;
-        this.rejectPendingLaunches('AI 问答来源已关闭。');
-        this.launchId += 1;
+        if (this.registrations.get(normalizedOwnerId)?.token !== token) return;
+        this.registrations.delete(normalizedOwnerId);
+        const wasActive = this.activeRegistration?.token === token;
+        const ownsPendingLaunch =
+          this.snapshot.launchRequest?.sourceOwnerId === normalizedOwnerId;
+        const ownsConsumedContext =
+          this.transientContextRequestId !== undefined &&
+          this.consumedLaunchOwners.get(this.transientContextRequestId) ===
+            normalizedOwnerId;
+        if (!wasActive && !ownsPendingLaunch && !ownsConsumedContext) return;
+
+        if (wasActive) {
+          this.activeRegistration = [...this.registrations.values()].at(-1);
+        }
+        if (ownsPendingLaunch) {
+          this.rejectPendingLaunches(
+            'AI 问答来源已关闭。',
+            normalizedOwnerId,
+          );
+        }
+        if (ownsConsumedContext) {
+          this.consumedLaunchOwners.delete(this.transientContextRequestId!);
+          this.transientContextRequestId = undefined;
+        }
+        if (ownsPendingLaunch || ownsConsumedContext) this.launchId += 1;
+
         this.update({
-          panelOpen: this.snapshot.panelOpen,
-          busy: this.snapshot.busy,
-          ...(this.snapshot.modeId ? { modeId: this.snapshot.modeId } : {}),
-          ...(this.snapshot.boundAssetId
-            ? { boundAssetId: this.snapshot.boundAssetId }
-            : {}),
-          ...(this.snapshot.panelOpen
+          ...this.snapshot,
+          ...(this.activeRegistration
+            ? { active: this.activeRegistration.source }
+            : wasActive
+              ? { active: undefined }
+              : {}),
+          ...(this.snapshot.panelOpen &&
+          (ownsPendingLaunch || ownsConsumedContext)
             ? {
                 launchRequest: Object.freeze({
                   id: this.launchId,
                   clearContext: true,
                 }),
               }
-            : {}),
+            : this.snapshot.launchRequest
+              ? { launchRequest: this.snapshot.launchRequest }
+              : { launchRequest: undefined }),
         });
       });
     };
@@ -140,6 +178,7 @@ export class WorkbenchConversationRuntime {
 
     try {
       const pending: PendingLaunch = {
+        ownerId: input.ownerId?.trim(),
         resolve: resolvePending!,
         reject: rejectPending!,
       };
@@ -171,7 +210,9 @@ export class WorkbenchConversationRuntime {
     pending?: PendingLaunch,
   ): void {
     const ownerId = input.ownerId?.trim();
-    const registration = this.activeRegistration;
+    const registration = ownerId
+      ? this.registrations.get(ownerId)
+      : this.activeRegistration;
     if (ownerId && registration?.ownerId !== ownerId) {
       throw new Error('当前 Workbench 没有注册 AI 问答上下文');
     }
@@ -219,6 +260,7 @@ export class WorkbenchConversationRuntime {
       ...(input.context === undefined ? {} : { context: input.context }),
       ...(input.question?.trim() ? { question: input.question.trim() } : {}),
       ...(input.submit === true ? { submit: true } : {}),
+      ...(ownerId ? { sourceOwnerId: ownerId } : {}),
     });
     this.update({
       ...this.snapshot,
@@ -253,6 +295,18 @@ export class WorkbenchConversationRuntime {
 
   consumeLaunchRequest(requestId: number): void {
     if (this.snapshot.launchRequest?.id !== requestId) return;
+    const request = this.snapshot.launchRequest;
+    this.consumedLaunchOwners.set(requestId, request.sourceOwnerId);
+    if (request.contextSource) {
+      this.transientContextRequestId = requestId;
+    } else if (request.clearContext) {
+      this.transientContextRequestId = undefined;
+    }
+    if (this.consumedLaunchOwners.size > 128) {
+      this.consumedLaunchOwners.delete(
+        this.consumedLaunchOwners.keys().next().value!,
+      );
+    }
     this.update({ ...this.snapshot, launchRequest: undefined });
   }
 
@@ -264,8 +318,13 @@ export class WorkbenchConversationRuntime {
   resolveContribution(
     source: ConversationMessageContextSource | undefined,
   ): WorkbenchConversationContribution | undefined {
-    const active = this.activeRegistration?.source;
-    return matchesSource(active, source) ? active.contribution : undefined;
+    if (!source) return undefined;
+    for (const registration of this.registrations.values()) {
+      if (matchesSource(registration.source, source)) {
+        return registration.source.contribution;
+      }
+    }
+    return undefined;
   }
 
   async revealContext(
@@ -310,6 +369,9 @@ export class WorkbenchConversationRuntime {
     this.rejectPendingLaunches('AI 问答面板已关闭。');
     this.cancelReveal();
     this.activeRegistration = undefined;
+    this.registrations.clear();
+    this.consumedLaunchOwners.clear();
+    this.transientContextRequestId = undefined;
     this.update({ panelOpen: false, busy: false });
     this.listeners.clear();
   }
@@ -321,8 +383,9 @@ export class WorkbenchConversationRuntime {
     this.revealAbortController = undefined;
   }
 
-  private rejectPendingLaunches(message: string): void {
+  private rejectPendingLaunches(message: string, ownerId?: string): void {
     for (const [requestId, pending] of this.pendingLaunches) {
+      if (ownerId !== undefined && pending.ownerId !== ownerId) continue;
       this.pendingLaunches.delete(requestId);
       if (pending.timer) clearTimeout(pending.timer);
       pending.reject(new Error(message));

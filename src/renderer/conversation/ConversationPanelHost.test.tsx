@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react';
+import { act, useEffect } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -8,7 +8,13 @@ import type {
   ConversationHistoryStore,
   WorkbenchConversationContribution,
 } from './conversation-contracts';
-import { ConversationPanelHost } from './ConversationPanelHost';
+import {
+  ConversationPanelHost,
+  ConversationPanelSessionHost,
+  ConversationPanelSurface,
+} from './ConversationPanelHost';
+import { ConversationModeRegistry } from './conversation-mode-registry';
+import { projectConversationMode } from './project-conversation-mode';
 import { WorkbenchConversationRuntime } from './workbench-conversation-runtime';
 import { WorkbenchConversationRuntimeProvider } from './WorkbenchConversationRuntimeProvider';
 
@@ -89,6 +95,32 @@ describe('ConversationPanelHost Project ownership', () => {
     });
   }
 
+  async function renderPersistentSurface(
+    runtime: WorkbenchConversationRuntime,
+    rightRail: boolean,
+  ) {
+    await act(async () => {
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelSessionHost
+            projectId="project-1"
+            historyStore={historyStore}
+            selectedAssetId="asset-html"
+            keepMounted
+          >
+            {rightRail ? (
+              <ConversationPanelSurface onSelectAsset={vi.fn()} />
+            ) : (
+              <ConversationPanelSurface compact onSelectAsset={vi.fn()} />
+            )}
+          </ConversationPanelSessionHost>
+        </WorkbenchConversationRuntimeProvider>,
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+  }
+
   it('rejects unavailable explicit modes without starting a general conversation', async () => {
     const runtime = new WorkbenchConversationRuntime();
     const save = vi.spyOn(historyStore, 'save');
@@ -129,6 +161,134 @@ describe('ConversationPanelHost Project ownership', () => {
     await render(runtime);
     await expect(pending).resolves.toBeUndefined();
     expect(runtime.getSnapshot().launchRequest).toBeUndefined();
+  });
+
+  it('preserves the draft and pending reference when a floating chat expands to the right rail', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    runtime.register('html.owner', 'asset-html', {
+      contextProviderId: 'builtin.html.conversation',
+      sourceAssetMode: 'reference',
+    });
+    runtime.open({
+      ownerId: 'html.owner',
+      context: {
+        selectedText: '这是需要保留的引用内容。',
+        target: {
+          scope: 'content',
+          targetType: 'html.range',
+          targetVersion: 1,
+          targetPayload: { path: 'p:1' },
+        },
+      },
+    });
+    await renderPersistentSurface(runtime, false);
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea');
+    expect(textarea).not.toBeNull();
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        'value',
+      )!.set!;
+      setter.call(textarea, '切换布局后仍应保留的草稿');
+      textarea!.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(container.textContent).toContain('这是需要保留的引用内容。');
+
+    await renderPersistentSurface(runtime, true);
+
+    expect(container.querySelector<HTMLTextAreaElement>('textarea')?.value)
+      .toBe('切换布局后仍应保留的草稿');
+    expect(container.textContent).toContain('这是需要保留的引用内容。');
+    runtime.dispose();
+  });
+
+  it('does not remount the surrounding workbench when chat opens or closes', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const mounted = vi.fn();
+    const unmounted = vi.fn();
+    function WorkbenchLayout() {
+      useEffect(() => {
+        mounted();
+        return () => unmounted();
+      }, []);
+      return <div data-testid="workbench-layout" />;
+    }
+
+    await act(async () => {
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelSessionHost
+            projectId="project-1"
+            historyStore={historyStore}
+            keepMounted
+          >
+            <WorkbenchLayout />
+          </ConversationPanelSessionHost>
+        </WorkbenchConversationRuntimeProvider>,
+      );
+      await Promise.resolve();
+    });
+    expect(mounted).toHaveBeenCalledOnce();
+
+    await act(async () => {
+      runtime.open();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      runtime.close();
+      await Promise.resolve();
+    });
+
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(unmounted).not.toHaveBeenCalled();
+    runtime.dispose();
+  });
+
+  it('replaces only the chat controller when a Workbench opens a bound mode', async () => {
+    const runtime = new WorkbenchConversationRuntime();
+    const mounted = vi.fn();
+    const unmounted = vi.fn();
+    const modeRegistry = new ConversationModeRegistry([
+      {
+        ...projectConversationMode,
+        id: 'workbench.bound-mode',
+      },
+    ]);
+    function WorkbenchLayout() {
+      useEffect(() => {
+        mounted();
+        return () => unmounted();
+      }, []);
+      return <div data-testid="workbench-layout" />;
+    }
+
+    await act(async () => {
+      root.render(
+        <WorkbenchConversationRuntimeProvider runtime={runtime}>
+          <ConversationPanelSessionHost
+            projectId="project-1"
+            historyStore={historyStore}
+            modeRegistry={modeRegistry}
+            keepMounted
+          >
+            <WorkbenchLayout />
+          </ConversationPanelSessionHost>
+        </WorkbenchConversationRuntimeProvider>,
+      );
+      await Promise.resolve();
+    });
+    runtime.open({
+      modeId: 'workbench.bound-mode',
+      boundAssetId: 'asset-outline',
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(mounted).toHaveBeenCalledOnce();
+    expect(unmounted).not.toHaveBeenCalled();
+    runtime.dispose();
   });
 
   it('uses the selected Asset Workbench for a contextless Task without rendering a reference card', async () => {

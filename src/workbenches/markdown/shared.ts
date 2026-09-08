@@ -6,6 +6,7 @@ import type { ContentAssetTarget } from '../../shared/workbench/asset-target';
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
+  createLocationReferenceSelectionExportFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
@@ -24,6 +25,7 @@ export const MARKDOWN_IMAGE_TARGET_TYPE = 'markdown.image-source';
 export const MARKDOWN_IMAGE_TARGET_VERSION = 1;
 export const MARKDOWN_STATE_SCHEMA_VERSION = 1;
 export const MARKDOWN_RECOVERY_DATA_KEY = 'recovery-content';
+export const MARKDOWN_CONFLICT_RECOVERY_DATA_KEY = 'conflict-recovery-content';
 export const MARKDOWN_IMAGE_DIRECTORY = 'images';
 export const MARKDOWN_MAX_IMAGE_BYTES = 15 * 1024 * 1024;
 
@@ -69,6 +71,17 @@ export type MarkdownRecoveryState = {
 
 export type MarkdownWorkbenchStateV1 = MarkdownWorkbenchViewState & {
   readonly recovery?: MarkdownRecoveryState;
+  readonly conflictRecoveries?: readonly MarkdownConflictRecoveryState[];
+  /** Recovery entries still holding a session-level edit conflict. */
+  readonly activeConflictIds?: readonly string[];
+};
+export type MarkdownConflictRecoveryState = Omit<
+  MarkdownRecoveryState,
+  'dataKey'
+> & {
+  readonly dataKey: string;
+  readonly conflictId: string;
+  readonly sharedDocumentVersion: number;
 };
 
 export type MarkdownRecoveryBootstrap = {
@@ -81,32 +94,78 @@ export type MarkdownRecoveryBootstrap = {
   readonly updatedTime: number;
   readonly sourceChanged: boolean;
 };
+export type MarkdownConflictRecoveryBootstrap = MarkdownRecoveryBootstrap & {
+  readonly conflictId: string;
+  readonly sharedContent: string;
+  readonly sharedDocumentVersion: number;
+};
+export type MarkdownConflictBackupResult =
+  | {
+      readonly conflictId: string;
+      readonly content: string;
+      readonly baseRevision: string;
+      readonly sharedDocumentVersion: number;
+    }
+  | {
+      /** The index remains visible even when its recovery bytes are missing or invalid. */
+      readonly conflictId: string;
+      readonly unavailable: true;
+      readonly baseRevision: string;
+      readonly sharedDocumentVersion: number;
+    };
+export type MarkdownReadConflictStateResult = {
+  readonly sharedContent: string;
+  readonly documentVersion: number;
+  readonly conflicts: readonly MarkdownConflictBackupResult[];
+};
+export type MarkdownResolveConflictPayload = {
+  readonly conflictId: string;
+  readonly expectedDocumentVersion: number;
+  readonly content: string;
+};
+export type MarkdownAdoptSharedPayload = { readonly conflictId: string };
+/** Both resolution commands return the current shared snapshot and backup index. */
+export type MarkdownResolveConflictResult = MarkdownReadConflictStateResult;
+export type MarkdownAdoptSharedResult = MarkdownReadConflictStateResult;
 
 export type MarkdownWorkbenchPayload = {
   readonly diskSource: string;
+  /** Shared in-memory document content when another viewport has unsaved edits. */
+  readonly workingBuffer?: string;
+  readonly documentDirty?: boolean;
   readonly encoding: MarkdownEncoding;
   readonly lineEnding: MarkdownLineEnding;
   readonly hasByteOrderMark: boolean;
   readonly revision: string;
+  /** Monotonically increasing, asset-scoped in-memory document version. */
+  readonly documentVersion?: number;
   readonly state: MarkdownWorkbenchViewState;
   readonly recovery?: MarkdownRecoveryBootstrap;
+  readonly conflictRecovery?: MarkdownConflictRecoveryBootstrap;
+  /** Historical conflict backups are available for an explicit restore. */
+  readonly conflictBackupsAvailable?: boolean;
 };
 
 export type MarkdownSourceBufferPayload = {
   readonly content: string;
   readonly lineEnding: MarkdownLineEnding;
   readonly sourceViewState: MarkdownSourceViewState;
+  readonly baseDocumentVersion?: number;
+  readonly updateId?: number;
 };
 
 export type MarkdownWysiwygBufferPayload = {
   readonly content: string;
   readonly lineEnding: MarkdownLineEnding;
   readonly wysiwygScrollTop: number;
+  readonly baseDocumentVersion?: number;
+  readonly updateId?: number;
 };
 
 export type MarkdownBufferSyncResult = {
   readonly accepted: true;
   readonly dirty: boolean;
+  readonly documentVersion?: number;
 };
 
 export type MarkdownSaveResult = {
@@ -192,6 +251,9 @@ export const markdownWorkbenchManifest: AssetWorkbenchManifest<
     createTextSelectionInputFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
+    createLocationReferenceSelectionExportFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
   ],
 };
 
@@ -204,6 +266,10 @@ export const markdownCommands = {
   setLineEnding: 'markdown:set-line-ending',
   reopenWithEncoding: 'markdown:reopen-with-encoding',
   discardRecovery: 'markdown:discard-recovery',
+  backupConflict: 'markdown:backup-conflict',
+  readConflictState: 'markdown:read-conflict-state',
+  resolveConflict: 'markdown:resolve-conflict',
+  adoptShared: 'markdown:adopt-shared',
   insertImage: 'markdown:insert-image',
   readImage: 'markdown:read-image',
 } as const;
@@ -212,8 +278,23 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function hasExactKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): boolean {
+  const actualKeys = Object.keys(value);
+  return actualKeys.length === keys.length &&
+    actualKeys.every((key) => keys.includes(key));
+}
+
 function isRequiredText(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isMarkdownConflictId(value: unknown): value is string {
+  // IDs are generated by Main. Keep the wire format bounded without forcing a
+  // UUID parser on old persisted recovery records.
+  return isRequiredText(value) && value.length <= 200;
 }
 
 const MARKDOWN_IMAGE_MEDIA_TYPE_EXTENSIONS: Readonly<
@@ -497,8 +578,38 @@ export function isMarkdownWorkbenchStateV1(
     return false;
   }
 
-  const recovery = (value as Record<string, unknown>).recovery;
-  return recovery === undefined || isMarkdownRecoveryState(recovery);
+  const record = value as Record<string, unknown>;
+  const recovery = record.recovery;
+  const conflicts = record.conflictRecoveries;
+  const activeConflictIds = record.activeConflictIds;
+  return (
+    (recovery === undefined || isMarkdownRecoveryState(recovery)) &&
+    (conflicts === undefined ||
+      (Array.isArray(conflicts) &&
+        conflicts.every((item) =>
+          isRecord(item) &&
+          isMarkdownConflictId(item.conflictId) &&
+          typeof item.dataKey === 'string' &&
+          item.dataKey.startsWith(MARKDOWN_CONFLICT_RECOVERY_DATA_KEY + ':') &&
+          isRequiredText(item.baseRevision) &&
+          isMarkdownEncoding(item.encoding) &&
+          isMarkdownLineEnding(item.lineEnding) &&
+          typeof item.hasByteOrderMark === 'boolean' &&
+          isMarkdownEditMode(item.editedFrom) &&
+          isNonNegativeInteger(item.updatedTime) &&
+          isNonNegativeInteger(item.sharedDocumentVersion),
+        ))) &&
+    (activeConflictIds === undefined ||
+      (Array.isArray(activeConflictIds) &&
+        conflicts !== undefined &&
+        activeConflictIds.every((id) =>
+          isMarkdownConflictId(id) &&
+          conflicts.some(
+            (conflict) => isRecord(conflict) && conflict.conflictId === id,
+          ),
+        ) &&
+        new Set(activeConflictIds).size === activeConflictIds.length))
+  );
 }
 
 export function isMarkdownWorkbenchPayload(
@@ -509,13 +620,20 @@ export function isMarkdownWorkbenchPayload(
   }
 
   const recovery = value.recovery;
+  const conflict = value.conflictRecovery;
 
   return (
     typeof value.diskSource === 'string' &&
+    (value.workingBuffer === undefined || typeof value.workingBuffer === 'string') &&
+    (value.documentDirty === undefined || typeof value.documentDirty === 'boolean') &&
     isMarkdownEncoding(value.encoding) &&
     isMarkdownLineEnding(value.lineEnding) &&
     typeof value.hasByteOrderMark === 'boolean' &&
     isRequiredText(value.revision) &&
+    (value.documentVersion === undefined ||
+      isNonNegativeInteger(value.documentVersion)) &&
+    (value.conflictBackupsAvailable === undefined ||
+      typeof value.conflictBackupsAvailable === 'boolean') &&
     isMarkdownWorkbenchViewState(value.state) &&
     (recovery === undefined ||
       (isRecord(recovery) &&
@@ -526,7 +644,20 @@ export function isMarkdownWorkbenchPayload(
         typeof recovery.hasByteOrderMark === 'boolean' &&
         isMarkdownEditMode(recovery.editedFrom) &&
         isNonNegativeInteger(recovery.updatedTime) &&
-        typeof recovery.sourceChanged === 'boolean'))
+        typeof recovery.sourceChanged === 'boolean')) &&
+    (conflict === undefined ||
+      (isRecord(conflict) &&
+        typeof conflict.content === 'string' &&
+        typeof conflict.sharedContent === 'string' &&
+        isMarkdownConflictId(conflict.conflictId) &&
+        isRequiredText(conflict.baseRevision) &&
+        isMarkdownEncoding(conflict.encoding) &&
+        isMarkdownLineEnding(conflict.lineEnding) &&
+        typeof conflict.hasByteOrderMark === 'boolean' &&
+        isMarkdownEditMode(conflict.editedFrom) &&
+        isNonNegativeInteger(conflict.updatedTime) &&
+        typeof conflict.sourceChanged === 'boolean' &&
+        isNonNegativeInteger(conflict.sharedDocumentVersion)))
   );
 }
 
@@ -538,8 +669,68 @@ export function isMarkdownSourceBufferPayload(
     typeof value.content === 'string' &&
     isMarkdownLineEnding(value.lineEnding) &&
     isMarkdownSourceViewState(value.sourceViewState) &&
+    (value.baseDocumentVersion === undefined ||
+      isNonNegativeInteger(value.baseDocumentVersion)) &&
+    (value.updateId === undefined || isNonNegativeInteger(value.updateId)) &&
     value.wysiwygScrollTop === undefined
   );
+}
+
+export function isMarkdownResolveConflictPayload(
+  value: JsonValue | undefined,
+): value is JsonValue & MarkdownResolveConflictPayload {
+  return isRecord(value) && hasExactKeys(value, [
+    'conflictId', 'expectedDocumentVersion', 'content',
+  ]) &&
+    isMarkdownConflictId(value.conflictId) &&
+    isNonNegativeInteger(value.expectedDocumentVersion) &&
+    typeof value.content === 'string';
+}
+
+export function isMarkdownAdoptSharedPayload(
+  value: JsonValue | undefined,
+): value is JsonValue & MarkdownAdoptSharedPayload {
+  return isRecord(value) && hasExactKeys(value, ['conflictId']) &&
+    isMarkdownConflictId(value.conflictId);
+}
+
+export function isMarkdownReadConflictStateResult(
+  value: unknown,
+): value is JsonValue & MarkdownReadConflictStateResult {
+  if (!isRecord(value) || !hasExactKeys(value, [
+    'sharedContent', 'documentVersion', 'conflicts',
+  ]) || typeof value.sharedContent !== 'string' ||
+    !isNonNegativeInteger(value.documentVersion) ||
+    !Array.isArray(value.conflicts)) {
+    return false;
+  }
+  return value.conflicts.every((conflict) => {
+    if (!isRecord(conflict) || !isMarkdownConflictId(conflict.conflictId) ||
+      !isRequiredText(conflict.baseRevision) ||
+      !isNonNegativeInteger(conflict.sharedDocumentVersion)) {
+      return false;
+    }
+    if (typeof conflict.content === 'string') {
+      return hasExactKeys(conflict, [
+        'conflictId', 'content', 'baseRevision', 'sharedDocumentVersion',
+      ]);
+    }
+    return conflict.unavailable === true && hasExactKeys(conflict, [
+      'conflictId', 'unavailable', 'baseRevision', 'sharedDocumentVersion',
+    ]);
+  });
+}
+
+export function isMarkdownResolveConflictResult(
+  value: unknown,
+): value is JsonValue & MarkdownResolveConflictResult {
+  return isMarkdownReadConflictStateResult(value);
+}
+
+export function isMarkdownAdoptSharedResult(
+  value: unknown,
+): value is JsonValue & MarkdownAdoptSharedResult {
+  return isMarkdownReadConflictStateResult(value);
 }
 
 export function isMarkdownWysiwygBufferPayload(
@@ -550,6 +741,9 @@ export function isMarkdownWysiwygBufferPayload(
     typeof value.content === 'string' &&
     isMarkdownLineEnding(value.lineEnding) &&
     isNonNegativeFiniteNumber(value.wysiwygScrollTop) &&
+    (value.baseDocumentVersion === undefined ||
+      isNonNegativeInteger(value.baseDocumentVersion)) &&
+    (value.updateId === undefined || isNonNegativeInteger(value.updateId)) &&
     value.sourceViewState === undefined
   );
 }
@@ -560,7 +754,9 @@ export function isMarkdownBufferSyncResult(
   return (
     isRecord(value) &&
     value.accepted === true &&
-    typeof value.dirty === 'boolean'
+    typeof value.dirty === 'boolean' &&
+    (value.documentVersion === undefined ||
+      isNonNegativeInteger(value.documentVersion))
   );
 }
 
@@ -670,6 +866,12 @@ export function createMarkdownSyncSourceCommand(
       sourceViewState: cloneMarkdownSourceViewState(
         payload.sourceViewState,
       ),
+      ...(payload.baseDocumentVersion !== undefined
+        ? { baseDocumentVersion: payload.baseDocumentVersion }
+        : {}),
+      ...(payload.updateId !== undefined
+        ? { updateId: payload.updateId }
+        : {}),
     },
   };
 }
@@ -683,6 +885,12 @@ export function createMarkdownSyncWysiwygCommand(
       content: payload.content,
       lineEnding: payload.lineEnding,
       wysiwygScrollTop: payload.wysiwygScrollTop,
+      ...(payload.baseDocumentVersion !== undefined
+        ? { baseDocumentVersion: payload.baseDocumentVersion }
+        : {}),
+      ...(payload.updateId !== undefined
+        ? { updateId: payload.updateId }
+        : {}),
     },
   };
 }

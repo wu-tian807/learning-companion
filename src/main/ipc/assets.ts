@@ -5,6 +5,7 @@ import {
   isAddLocalAssetsRequest,
   isAssetIdRequest,
   isCreateAssetFolderRequest,
+  isCreateMarkdownNoteRequest,
   isDeleteAssetsRequest,
   isMoveAssetsToFolderRequest,
   isProjectLifecycleRequest,
@@ -120,6 +121,17 @@ export function registerAssetHandlers(
 
     return assetService.update(request.assetId, { name: request.name });
   });
+
+  registerIpcHandler(
+    IPC_CHANNELS.createMarkdownNote,
+    async (_event, request: unknown) => {
+      if (!isCreateMarkdownNoteRequest(request)) throw invalidRequest();
+      if (assetService.getActiveProjectId() !== request.projectId) {
+        throw new AppError('PROJECT_CONTEXT_CHANGED');
+      }
+      return assetService.createMarkdownNote(request.projectId, request.name);
+    },
+  );
 
   registerIpcHandler(
     IPC_CHANNELS.relinkAsset,
@@ -302,6 +314,7 @@ export function removeAssetHandlers(): void {
   ipcMain.removeHandler(IPC_CHANNELS.selectLocalAssetFiles);
   ipcMain.removeHandler(IPC_CHANNELS.addLocalAssets);
   ipcMain.removeHandler(IPC_CHANNELS.renameAsset);
+  ipcMain.removeHandler(IPC_CHANNELS.createMarkdownNote);
   ipcMain.removeHandler(IPC_CHANNELS.relinkAsset);
   ipcMain.removeHandler(IPC_CHANNELS.deleteAssets);
   ipcMain.removeHandler(IPC_CHANNELS.refreshAsset);

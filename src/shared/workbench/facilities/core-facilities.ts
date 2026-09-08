@@ -19,6 +19,9 @@ export const CORE_CONTEXT_MENU_SURFACE_FACILITY_ID =
   'core.surface.context-menu';
 export const CORE_TEXT_SELECTION_INPUT_FACILITY_ID =
   'core.input.text-selection';
+/** Declares that a Workbench exports its native selection as a link source. */
+export const CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID =
+  'core.export.location-reference';
 export const CORE_FACILITY_VERSION = 1;
 export const CORE_TEXT_SELECTION_MAX_LENGTH = 16_384;
 export const CORE_FRAME_URL_MAX_LENGTH = 8_192;
@@ -51,6 +54,10 @@ interface CaptureFacilityOptions {
 
 interface TextSelectionFacilityOptions extends CaptureFacilityOptions {
   readonly publish: 'settled' | 'explicit';
+}
+
+interface LocationReferenceExportFacilityOptions extends CaptureFacilityOptions {
+  readonly export: 'selection';
 }
 
 export interface CoreTextSelectionFacilityEvent {
@@ -210,6 +217,17 @@ function isTextSelectionFacilityOptions(
   );
 }
 
+function isLocationReferenceExportFacilityOptions(
+  value: JsonValue | undefined,
+): value is JsonValue & LocationReferenceExportFacilityOptions {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, ['capture', 'export']) &&
+    isTransportId(value.capture) &&
+    value.export === 'selection'
+  );
+}
+
 export function isCoreTextSelectionFacilityEvent(
   value: JsonValue,
 ): value is JsonValue & CoreTextSelectionFacilityEvent {
@@ -359,6 +377,14 @@ const textSelectionInputDefinition = defineWorkbenchFacility({
   validateDependencies: capturesDeclaredTransport,
 });
 
+const locationReferenceExportDefinition = defineWorkbenchFacility({
+  id: CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID,
+  version: CORE_FACILITY_VERSION,
+  role: 'capture',
+  validateOptions: isLocationReferenceExportFacilityOptions,
+  validateDependencies: capturesDeclaredTransport,
+});
+
 export function createCoreWorkbenchFacilityDefinitionRegistry(): WorkbenchFacilityDefinitionRegistry {
   const registry = new WorkbenchFacilityDefinitionRegistry();
 
@@ -368,6 +394,7 @@ export function createCoreWorkbenchFacilityDefinitionRegistry(): WorkbenchFacili
   registry.register(overflowSurfaceDefinition);
   registry.register(contextMenuSurfaceDefinition);
   registry.register(textSelectionInputDefinition);
+  registry.register(locationReferenceExportDefinition);
 
   return registry;
 }
@@ -414,5 +441,15 @@ export function createTextSelectionInputFacilityDeclaration(
     id: CORE_TEXT_SELECTION_INPUT_FACILITY_ID,
     version: CORE_FACILITY_VERSION,
     options: { capture, publish },
+  };
+}
+
+export function createLocationReferenceSelectionExportFacilityDeclaration(
+  capture: CoreWorkbenchTransportFacilityId,
+): WorkbenchFacilityDeclaration {
+  return {
+    id: CORE_LOCATION_REFERENCE_EXPORT_FACILITY_ID,
+    version: CORE_FACILITY_VERSION,
+    options: { capture, export: 'selection' },
   };
 }

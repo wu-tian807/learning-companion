@@ -5,6 +5,7 @@ import {
 import {
   CORE_RENDERER_TRANSPORT_FACILITY_ID,
   createContextMenuSurfaceFacilityDeclaration,
+  createLocationReferenceSelectionExportFacilityDeclaration,
   createTextSelectionInputFacilityDeclaration,
   overflowSurfaceFacilityDeclaration,
   rendererTransportFacilityDeclaration,
@@ -61,6 +62,9 @@ export const plainTextWorkbenchManifest: AssetWorkbenchManifest<
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
     createTextSelectionInputFacilityDeclaration(
+      CORE_RENDERER_TRANSPORT_FACILITY_ID,
+    ),
+    createLocationReferenceSelectionExportFacilityDeclaration(
       CORE_RENDERER_TRANSPORT_FACILITY_ID,
     ),
   ],

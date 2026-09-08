@@ -26,6 +26,7 @@ describe('Markdown renderer actions', () => {
       viewState: DEFAULT_MARKDOWN_WORKBENCH_STATE,
       hasSelection: () => hasSelection,
       onAiExplain: vi.fn(),
+      onInsertLocationReference: vi.fn(),
       onSetEncoding: vi.fn(async () => undefined),
       onSetLineEnding: vi.fn(async () => undefined),
       onSetViewState: vi.fn(async () => undefined),
@@ -42,7 +43,10 @@ describe('Markdown renderer actions', () => {
       bundle.contributions
         .filter((entry) => entry.surface === 'context-menu')
         .map((entry) => entry.presentation.label),
-    ).toEqual(['就选中内容问 AI']);
+    ).toEqual([
+      '插入已选原文位置引用',
+      '就选中内容问 AI',
+    ]);
   });
 
   it('asks AI with the selected text and its source Target', async () => {
@@ -55,6 +59,7 @@ describe('Markdown renderer actions', () => {
       viewState: DEFAULT_MARKDOWN_WORKBENCH_STATE,
       hasSelection: () => true,
       onAiExplain,
+      onInsertLocationReference: vi.fn(),
       onSetEncoding: vi.fn(async () => undefined),
       onSetLineEnding: vi.fn(async () => undefined),
       onSetViewState: vi.fn(async () => undefined),
@@ -84,5 +89,50 @@ describe('Markdown renderer actions', () => {
     });
 
     expect(onAiExplain).toHaveBeenCalledWith(source, target);
+  });
+
+  it('keeps location insertion independent from AI selection state', async () => {
+    const onInsertLocationReference = vi.fn(async () => undefined);
+    const bundle = createMarkdownRendererActions({
+      disabled: false,
+      encodingDisabled: false,
+      encoding: 'utf-8',
+      lineEnding: 'lf',
+      viewState: DEFAULT_MARKDOWN_WORKBENCH_STATE,
+      hasSelection: () => false,
+      onAiExplain: vi.fn(),
+      onInsertLocationReference,
+      onSetEncoding: vi.fn(async () => undefined),
+      onSetLineEnding: vi.fn(async () => undefined),
+      onSetViewState: vi.fn(async () => undefined),
+      onReveal: vi.fn(),
+    });
+
+    const insert = bundle.actions.find(
+      (action) => action.id === 'markdown.insert-location-reference',
+    )!;
+    await insert.execute({
+      projectId: 'project-1', assetId: 'note-1', workbenchId: 'builtin.markdown',
+      sessionId: 'note-session', origin: 'context-menu', inputs: [],
+    });
+
+    expect(isWorkbenchActionEnabled(insert)).toBe(true);
+    expect(onInsertLocationReference).toHaveBeenCalledOnce();
+  });
+
+  it('does not expose a private capture action', () => {
+    const bundle = createMarkdownRendererActions({
+      disabled: false, encodingDisabled: false, encoding: 'utf-8',
+      lineEnding: 'lf', viewState: DEFAULT_MARKDOWN_WORKBENCH_STATE,
+      hasSelection: () => true, onAiExplain: vi.fn(),
+      onInsertLocationReference: vi.fn(),
+      onSetEncoding: vi.fn(async () => undefined),
+      onSetLineEnding: vi.fn(async () => undefined),
+      onSetViewState: vi.fn(async () => undefined), onReveal: vi.fn(),
+    });
+
+    expect(bundle.actions.some(
+      (action) => action.id === 'markdown.capture-location-reference',
+    )).toBe(false);
   });
 });

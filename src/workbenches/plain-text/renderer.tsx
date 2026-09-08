@@ -40,6 +40,7 @@ import {
 import { userMessageFromError } from '../../shared/ipc-error';
 import type { WorkbenchCommandResult } from '../../shared/workbench/protocol';
 import type { AssetTarget } from '../../shared/workbench/asset-target';
+import { findTextSelectionInput } from '../../shared/workbench/selection';
 import {
   createTextRangeTarget,
   resolveTextRangeSelection,
@@ -266,6 +267,7 @@ export function PlainTextWorkbenchView({
   asset,
   executeCommand,
   onInteractionChange,
+  onLocationSelectionChange,
   onError,
   attachments,
   refreshAttachments,
@@ -310,6 +312,22 @@ export function PlainTextWorkbenchView({
   );
   const dirty =
     content !== savedContent || lineEnding !== savedLineEnding;
+  const reportPlainTextInteraction = useCallback(
+    (interaction: Parameters<typeof onInteractionChange>[0]) => {
+      onInteractionChange(interaction);
+      const selection = findTextSelectionInput(interaction);
+      if (!selection || dirty || !sourceRevision || recovery) {
+        onLocationSelectionChange?.(undefined);
+        return;
+      }
+      onLocationSelectionChange?.({
+        target: selection.target,
+        sourceRevision,
+        text: selection.text,
+      });
+    },
+    [dirty, onInteractionChange, onLocationSelectionChange, recovery, sourceRevision],
+  );
   const extensions = useMemo(() => {
     const configured = [plainTextEditorTheme];
 
@@ -743,6 +761,7 @@ export function PlainTextWorkbenchView({
           return true;
         },
       },
+      bootstrap.viewportId,
     );
   }, [
     asset.id,
@@ -860,7 +879,7 @@ export function PlainTextWorkbenchView({
     }
 
     runtime.closeContextMenu();
-    onInteractionChange({ inputs: [] });
+    reportPlainTextInteraction({ inputs: [] });
     await updateViewOptions({
       ...viewOptions,
       readMode,
@@ -881,7 +900,7 @@ export function PlainTextWorkbenchView({
     element.scrollTop = viewStateRef.current.scrollTop;
 
     const publishSelection = () => {
-      onInteractionChange(
+      reportPlainTextInteraction(
         readActionAdapter.captureInteraction(),
       );
     };
@@ -895,7 +914,7 @@ export function PlainTextWorkbenchView({
       );
     };
   }, [
-    onInteractionChange,
+    reportPlainTextInteraction,
     readActionAdapter,
     recovery,
     viewOptions.readMode,
@@ -1079,7 +1098,7 @@ export function PlainTextWorkbenchView({
               viewStateRef.current = nextViewState;
               setCursor(cursorLabel(update));
               if (update.selectionSet) {
-                onInteractionChange(
+                reportPlainTextInteraction(
                   editorActionAdapter.captureInteraction(),
                 );
               }
@@ -1116,5 +1135,6 @@ export const plainTextRendererWorkbenchModule: RendererWorkbenchModule<
   typeof plainTextWorkbenchManifest.id
 > = {
   manifest: plainTextWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: PlainTextWorkbenchView,
 };

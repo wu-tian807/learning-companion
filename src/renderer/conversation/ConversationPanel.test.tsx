@@ -81,6 +81,7 @@ function render(
       ? contribution
       : undefined,
   presentation?: ConversationModePresentation,
+  compact = false,
 ): string {
   return renderToStaticMarkup(
     <ConversationPanel
@@ -94,6 +95,8 @@ function render(
       onOpenSettings={vi.fn()}
       onError={vi.fn()}
       presentation={presentation}
+      compact={compact}
+      onExpand={vi.fn()}
     />,
   );
 }
@@ -131,6 +134,21 @@ describe('ConversationPanel', () => {
     );
 
     expect(html).not.toContain('＋ 新对话');
+  });
+
+  it('keeps a floating conversation focused on the current question', () => {
+    const html = render(
+      state({ tab: 'history' }),
+      undefined,
+      undefined,
+      true,
+    );
+
+    expect(html).toContain('aria-label="展开 AI 问答"');
+    expect(html).not.toContain('aria-label="AI 问答页签"');
+    expect(html).not.toContain('＋ 新对话');
+    expect(html).not.toContain('查看');
+    expect(html).not.toContain('删除');
   });
 
   it('renders and links a persisted reference without a mounted Workbench', () => {
@@ -179,6 +197,10 @@ describe('ConversationPanel', () => {
     expect(html).toContain('AGENT_PROVIDER_SELECTION_REQUIRED');
     expect(html).toContain('重试原任务');
     expect(html).toContain('打开模型设置');
+    expect(html).toContain('展开引用');
+    const referenceDetail = html.match(/class="([^"]*line-clamp-4[^"]*)"/u)?.[1];
+    expect(referenceDetail).toBeDefined();
+    expect(referenceDetail).not.toContain('block');
     const panel = html.match(
       /<section[^>]*id="project-conversation-panel"[^>]*>/u,
     )?.[0];

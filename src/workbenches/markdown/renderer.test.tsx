@@ -9,7 +9,8 @@ import type { AssetSnapshot } from '../../shared/assets';
 import type { WorkbenchBootstrap } from '../../shared/workbench/protocol';
 import { WorkbenchRuntimeProvider } from '../../renderer/workbench/runtime/WorkbenchRuntimeProvider';
 import { WorkbenchConversationRuntimeProvider } from '../../renderer/conversation/WorkbenchConversationRuntimeProvider';
-import { MarkdownWorkbenchView } from './renderer';
+import { markdownLocationHrefAt, MarkdownWorkbenchView } from './renderer';
+import { createWorkbenchLocationHref } from '../../shared/workbench/location-reference';
 import {
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
   MARKDOWN_WORKBENCH_ID,
@@ -82,6 +83,23 @@ const basePayload = {
 } as const;
 
 describe('MarkdownWorkbenchView', () => {
+  it('recognizes a Ctrl-clickable v2 location link in source Markdown only at its href', () => {
+    const href = createWorkbenchLocationHref({
+      version: 2,
+      projectId: 'project',
+      assetId: 'source',
+      target: {
+        scope: 'content', targetType: 'markdown.source-range', targetVersion: 1,
+        targetPayload: { exact: 'quoted' },
+      },
+      sourceRevision: 'r1',
+    });
+    const line = `[原文](${href})`;
+
+    expect(markdownLocationHrefAt(line, line.indexOf(href))).toBe(href);
+    expect(markdownLocationHrefAt(line, 1)).toBeUndefined();
+  });
+
   it('renders the full-height WYSIWYG host without exposing local paths', () => {
     const markup = render(basePayload);
 
@@ -122,5 +140,15 @@ describe('MarkdownWorkbenchView', () => {
     expect(markup).toContain('Markdown Workbench 数据无效');
     expect(markup).not.toContain('# 私有内容');
     expect(markup).not.toContain('Markdown 可视化编辑器');
+  });
+
+  it('exposes retained conflict backups without locking ordinary editing', () => {
+    const markup = render({
+      ...basePayload,
+      conflictBackupsAvailable: true,
+    });
+
+    expect(markup).toContain('恢复冲突草稿');
+    expect(markup).not.toContain('普通保存已锁定');
   });
 });

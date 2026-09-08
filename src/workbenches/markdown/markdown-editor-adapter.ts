@@ -15,6 +15,8 @@ export interface MarkdownEditorAdapterOptions {
   readonly onInput: (value: string) => void;
   readonly onScroll: (scrollTop: number) => void;
   readonly onOpenExternal: (url: string) => void;
+  readonly isInternalLinkAllowed?: (url: string) => boolean;
+  readonly onOpenInternalLink?: (url: string) => void;
   readonly onError: (error: unknown) => void;
   /**
    * 把 Markdown 引用指向的本地图片（相对路径）解析为可显示的 data URL。
@@ -428,6 +430,11 @@ export class MarkdownEditorAdapter {
 
           if (href && isSafeMarkdownExternalLink(href)) {
             options.onOpenExternal(href);
+          } else if (
+            href &&
+            options.isInternalLinkAllowed?.(href)
+          ) {
+            options.onOpenInternalLink?.(href);
           }
         },
       },

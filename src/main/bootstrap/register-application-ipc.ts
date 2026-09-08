@@ -50,6 +50,11 @@ import {
   registerProjectConversationHandlers,
   removeProjectConversationHandlers,
 } from '../ipc/project-conversations';
+import type { ProjectNotebookAssetServiceApi } from '../project-notebook-assets/project-notebook-asset-service';
+import {
+  registerProjectNotebookAssetHandlers,
+  removeProjectNotebookAssetHandlers,
+} from '../ipc/project-notebook-assets';
 import type { SettingsRepository } from '../settings/settings-repository';
 import type { WorkbenchSessionServiceApi } from '../workbench/workbench-session-service';
 import type { WorkbenchEventBusApi } from '../workbench/workbench-event-bus';
@@ -64,6 +69,7 @@ export interface ApplicationIpcServices {
   readonly generationTaskService: GenerationTaskServiceApi;
   readonly projectService: ProjectServiceApi;
   readonly projectConversationService: ProjectConversationServiceApi;
+  readonly projectNotebookAssetService: ProjectNotebookAssetServiceApi;
   readonly settingsRepository: SettingsRepository;
   readonly workbenchSessionService: WorkbenchSessionServiceApi;
   readonly workbenchEvents: WorkbenchEventBusApi;
@@ -91,6 +97,10 @@ export interface ApplicationIpcRegistrations {
     service: ProjectConversationServiceApi,
   ) => void;
   readonly removeProjectConversations: () => void;
+  readonly registerProjectNotebookAssets: (
+    service: ProjectNotebookAssetServiceApi,
+  ) => void;
+  readonly removeProjectNotebookAssets: () => void;
   readonly registerAssets: (service: AssetServiceApi) => void;
   readonly removeAssets: () => void;
   readonly registerGenerationTasks: (
@@ -124,6 +134,8 @@ const defaultRegistrations: ApplicationIpcRegistrations = {
   removeProjects: removeProjectHandlers,
   registerProjectConversations: registerProjectConversationHandlers,
   removeProjectConversations: removeProjectConversationHandlers,
+  registerProjectNotebookAssets: registerProjectNotebookAssetHandlers,
+  removeProjectNotebookAssets: removeProjectNotebookAssetHandlers,
   registerAssets: registerAssetHandlers,
   removeAssets: removeAssetHandlers,
   registerGenerationTasks: registerGenerationTaskHandlers,
@@ -198,6 +210,13 @@ export function registerApplicationIpc(
           services.projectConversationService,
         ),
       registrations.removeProjectConversations,
+    );
+    register(
+      () =>
+        registrations.registerProjectNotebookAssets(
+          services.projectNotebookAssetService,
+        ),
+      registrations.removeProjectNotebookAssets,
     );
     register(
       () => registrations.registerAssets(services.assetService),

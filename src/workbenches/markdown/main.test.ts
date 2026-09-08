@@ -17,6 +17,7 @@ import {
   createAbsoluteLocalFileContentRef,
 } from '../../main/content/content-ref';
 import type { WorkbenchProviderContext } from '../../main/workbench/workbench-session';
+import { WorkbenchEventBus } from '../../main/workbench/workbench-event-bus';
 import type {
   WorkbenchStateDataRecord,
   WorkbenchStateDataDatabaseApi,
@@ -32,6 +33,9 @@ import {
   createMarkdownSyncSourceCommand,
   createMarkdownSyncWysiwygCommand,
   DEFAULT_MARKDOWN_WORKBENCH_STATE,
+  isMarkdownAdoptSharedPayload,
+  isMarkdownReadConflictStateResult,
+  isMarkdownResolveConflictPayload,
   isMarkdownWorkbenchPayload,
   MARKDOWN_RECOVERY_DATA_KEY,
   MARKDOWN_STATE_SCHEMA_VERSION,
@@ -140,6 +144,90 @@ const source: ResolvedTextContent = {
 const sourceViewState = { anchor: 1, head: 3, scrollTop: 12 };
 
 describe('MarkdownWorkbenchProvider', () => {
+  it('treats a future document version as invalid IPC without locking the writer', async () => {
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(), new MemoryDataDatabase(),
+    );
+    const { handle } = createHandle(source);
+    const context = createContext('session', handle);
+    await provider.open(context);
+    await provider.command(context, createMarkdownSyncSourceCommand({
+      content: '# first\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 0, updateId: 1,
+    }));
+
+    await expect(provider.command(context, createMarkdownSyncSourceCommand({
+      content: '# malformed\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 99, updateId: 2,
+    }))).rejects.toThrow('INVALID_IPC_REQUEST');
+
+    await expect(provider.command(context, createMarkdownSyncSourceCommand({
+      content: '# still editable\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 1, updateId: 3,
+    }))).resolves.toMatchObject({ payload: { accepted: true } });
+  });
+
+  it('releases every conflict owned by one session while retaining the backups', async () => {
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(), new MemoryDataDatabase(),
+    );
+    const { handle } = createHandle(source);
+    const first = createContext('first', handle);
+    const second = createContext('second', handle);
+    await provider.open(first);
+    await provider.open(second);
+    await provider.command(first, createMarkdownSyncSourceCommand({
+      content: '# shared\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 0, updateId: 1,
+    }));
+    for (const content of ['# rejected one\n', '# rejected two\n']) {
+      await expect(provider.command(second, createMarkdownSyncSourceCommand({
+        content, lineEnding: 'lf', sourceViewState,
+        baseDocumentVersion: 0, updateId: 1,
+      }))).rejects.toThrow('CONTENT_HAS_UNSAVED_CHANGES');
+    }
+    const state = await provider.command(second, {
+      type: markdownCommands.readConflictState,
+    });
+    expect(isMarkdownReadConflictStateResult(state.payload)).toBe(true);
+    const conflicts = (state.payload as { conflicts: readonly { conflictId: string }[] }).conflicts;
+    expect(conflicts).toHaveLength(2);
+    await expect(provider.command(first, {
+      type: markdownCommands.adoptShared,
+      payload: { conflictId: conflicts[0]!.conflictId },
+    })).rejects.toThrow('INVALID_IPC_REQUEST');
+    await provider.command(second, {
+      type: markdownCommands.adoptShared,
+      payload: { conflictId: conflicts[0]!.conflictId },
+    });
+
+    await expect(provider.command(second, createMarkdownSyncSourceCommand({
+      content: '# resumed\n', lineEnding: 'lf', sourceViewState,
+      baseDocumentVersion: 1, updateId: 2,
+    }))).resolves.toMatchObject({ payload: { accepted: true } });
+    const after = await provider.command(second, {
+      type: markdownCommands.readConflictState,
+    });
+    expect((after.payload as { conflicts: unknown[] }).conflicts).toHaveLength(2);
+  });
+
+  it('validates the closed conflict command and result protocol', () => {
+    expect(isMarkdownResolveConflictPayload({
+      conflictId: 'conflict', expectedDocumentVersion: 1, content: 'merged',
+    })).toBe(true);
+    expect(isMarkdownResolveConflictPayload({
+      conflictId: 'conflict', expectedDocumentVersion: Number.NaN, content: 'merged',
+    })).toBe(false);
+    expect(isMarkdownAdoptSharedPayload({ conflictId: 'conflict', extra: true })).toBe(false);
+    expect(isMarkdownReadConflictStateResult({
+      sharedContent: 'shared', documentVersion: 1,
+      conflicts: [{ conflictId: 'missing', unavailable: true, baseRevision: 'r1', sharedDocumentVersion: 0 }],
+    })).toBe(true);
+    expect(isMarkdownReadConflictStateResult({
+      sharedContent: 'shared', documentVersion: -1, conflicts: [],
+    })).toBe(false);
+  });
+
   it('opens disk source with the default Markdown state', async () => {
     const provider = new MarkdownWorkbenchProvider(
       new MemoryStateDatabase(),
@@ -158,6 +246,7 @@ describe('MarkdownWorkbenchProvider', () => {
       lineEnding: 'lf',
       hasByteOrderMark: false,
       revision: 'revision-0',
+      documentVersion: 0,
       state: DEFAULT_MARKDOWN_WORKBENCH_STATE,
     });
   });
@@ -183,6 +272,7 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(synced.payload).toEqual({
       accepted: true,
       dirty: true,
+      documentVersion: 1,
     });
     const saved = await provider.command(context, {
       type: markdownCommands.save,
@@ -200,6 +290,206 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(
       new TextDecoder().decode(writeBytes.mock.calls[0]?.[0].content),
     ).toBe('# Source 修改\n');
+  });
+
+  it('shares one Markdown document buffer across viewport sessions and keeps it after one closes', async () => {
+    const events = new WorkbenchEventBus();
+    const received: unknown[] = [];
+    events.subscribe((event) => received.push(event));
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
+      { workbenchEvents: events },
+    );
+    const { handle } = createHandle(source);
+    const first = createContext('first', handle);
+    const second = createContext('second', handle);
+    await provider.open(first);
+    await provider.open(second);
+
+    await provider.command(
+      first,
+      createMarkdownSyncSourceCommand({
+        content: '# 两个视口看见同一份草稿\n',
+        lineEnding: 'lf',
+        sourceViewState,
+      }),
+    );
+
+    expect(received).toContainEqual({
+      sessionId: 'second',
+      type: 'markdown:document-changed',
+      payload: expect.objectContaining({
+        content: '# 两个视口看见同一份草稿\n',
+      }),
+    });
+    const third = await provider.open(createContext('third', handle));
+    expect(third.payload).toMatchObject({
+      diskSource: source.content,
+      workingBuffer: '# 两个视口看见同一份草稿\n',
+      documentDirty: true,
+    });
+
+    await provider.close(first);
+    const saved = await provider.command(second, {
+      type: markdownCommands.save,
+    });
+    expect(saved.payload).toMatchObject({ revision: 'revision-1' });
+  });
+
+  it('rejects a stale viewport buffer instead of silently replacing a peer edit', async () => {
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
+    );
+    const { handle } = createHandle(source);
+    const first = createContext('first', handle);
+    const second = createContext('second', handle);
+    await provider.open(first);
+    await provider.open(second);
+    await provider.command(
+      first,
+      createMarkdownSyncSourceCommand({
+        content: '# first\n',
+        lineEnding: 'lf',
+        sourceViewState,
+        baseDocumentVersion: 0,
+        updateId: 1,
+      }),
+    );
+    await expect(
+      provider.command(
+        second,
+        createMarkdownSyncSourceCommand({
+          content: '# stale second\n',
+          lineEnding: 'lf',
+          sourceViewState,
+          baseDocumentVersion: 0,
+          updateId: 1,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'CONTENT_HAS_UNSAVED_CHANGES' });
+    const reopened = await provider.open(createContext('third', handle));
+    expect(reopened.payload).toMatchObject({ workingBuffer: '# first\n' });
+  });
+
+  it('rejects a writer that claims a future document version', async () => {
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
+    );
+    const { handle } = createHandle(source);
+    const context = createContext('session', handle);
+    await provider.open(context);
+    await expect(
+      provider.command(
+        context,
+        createMarkdownSyncSourceCommand({
+          content: '# impossible future\n',
+          lineEnding: 'lf',
+          sourceViewState,
+          baseDocumentVersion: 999,
+          updateId: 1,
+        }),
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_IPC_REQUEST' });
+  });
+
+  it('serializes simultaneous saves from two Markdown sessions into one write', async () => {
+    const provider = new MarkdownWorkbenchProvider(
+      new MemoryStateDatabase(),
+      new MemoryDataDatabase(),
+    );
+    const { handle, writeBytes } = createHandle(source);
+    const first = createContext('first', handle);
+    const second = createContext('second', handle);
+    await provider.open(first);
+    await provider.open(second);
+    await provider.command(
+      first,
+      createMarkdownSyncSourceCommand({
+        content: '# shared\n',
+        lineEnding: 'lf',
+        sourceViewState,
+      }),
+    );
+    const [left, right] = await Promise.all([
+      provider.command(first, { type: markdownCommands.save }),
+      provider.command(second, { type: markdownCommands.save }),
+    ]);
+    expect(left.payload).toMatchObject({ revision: 'revision-1' });
+    expect(right.payload).toMatchObject({ revision: 'revision-1' });
+    expect(writeBytes).toHaveBeenCalledOnce();
+  });
+
+  it('keeps input that arrives while a save is writing as a recoverable dirty buffer', async () => {
+    const states = new MemoryStateDatabase();
+    const data = new MemoryDataDatabase();
+    let diskContent = source.content;
+    let diskRevision = source.revision;
+    let releaseWrite!: () => void;
+    let reportWriteStarted!: () => void;
+    const writeGate = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    const writeStarted = new Promise<void>((resolve) => {
+      reportWriteStarted = resolve;
+    });
+    const writeBytes = vi.fn(async (request: WriteByteContentRequest) => {
+      expect(request.expectedRevision).toBe(diskRevision);
+      reportWriteStarted();
+      await writeGate;
+      diskContent = new TextDecoder().decode(request.content);
+      diskRevision = 'revision-1';
+      return { revision: diskRevision };
+    });
+    const handle: ContentHandle = {
+      capabilities: new Set(['read-bytes', 'write-bytes']),
+      readBytes: vi.fn(async () => ({
+        content: encodeTextContent({ ...source, content: diskContent }),
+        revision: diskRevision,
+      })),
+      writeBytes,
+      close: vi.fn(async () => undefined),
+    };
+    const provider = new MarkdownWorkbenchProvider(states, data);
+    const context = createContext('session', handle);
+    await provider.open(context);
+    await provider.command(
+      context,
+      createMarkdownSyncSourceCommand({
+        content: '# first edit\n',
+        lineEnding: 'lf',
+        sourceViewState,
+      }),
+    );
+
+    const saving = provider.command(context, { type: markdownCommands.save });
+    await writeStarted;
+    await provider.command(
+      context,
+      createMarkdownSyncSourceCommand({
+        content: '# second edit during save\n',
+        lineEnding: 'lf',
+        sourceViewState,
+      }),
+    );
+    releaseWrite();
+    await saving;
+    await provider.close(context);
+
+    expect(diskContent).toBe('# first edit\n');
+    expect(
+      new TextDecoder().decode(
+        (
+          await data.get(
+            'asset',
+            MARKDOWN_WORKBENCH_ID,
+            MARKDOWN_RECOVERY_DATA_KEY,
+          )
+        )?.data,
+      ),
+    ).toBe('# second edit during save\n');
   });
 
   it('allows a WYSIWYG edit through the ordinary save command', async () => {
@@ -223,6 +513,7 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(synced.payload).toEqual({
       accepted: true,
       dirty: true,
+      documentVersion: 1,
     });
     const saved = await provider.command(context, {
       type: markdownCommands.save,
@@ -264,6 +555,7 @@ describe('MarkdownWorkbenchProvider', () => {
     expect(sourceSync.payload).toEqual({
       accepted: true,
       dirty: true,
+      documentVersion: 2,
     });
     await expect(
       provider.command(context, { type: markdownCommands.save }),

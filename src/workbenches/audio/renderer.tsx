@@ -143,6 +143,7 @@ export function AudioWorkbenchView({
   onOpenSettings,
   onError,
   subscribeEvent,
+  onLocationSelectionChange,
 }: RendererWorkbenchViewProps) {
   const runtime = useWorkbenchRuntime();
   const payload = isAudioWorkbenchPayload(bootstrap.payload)
@@ -393,6 +394,7 @@ export function AudioWorkbenchView({
           return revealAudioTarget(audio, target, seek);
         },
       },
+      bootstrap.viewportId,
     );
   }, [asset.id, bootstrap.sessionId, payload?.sourceRevision, ready, seek]);
   const toggleMuted = useCallback(() => {
@@ -452,13 +454,21 @@ export function AudioWorkbenchView({
     (event: ReactMouseEvent<HTMLDivElement>) => {
       event.preventDefault();
       const seconds = audioRef.current?.currentTime ?? currentTime;
+      const target = createAudioTimeRangeTarget(seconds);
+      if (payload?.sourceRevision) {
+        onLocationSelectionChange?.({
+          target,
+          sourceRevision: payload.sourceRevision,
+          text: '音频位置',
+        });
+      }
       runtime.openContextMenu(
         bootstrap.sessionId,
         { x: event.clientX, y: event.clientY },
-        { focus: createAudioTimeRangeTarget(seconds), inputs: [] },
+        { focus: target, inputs: [] },
       );
     },
-    [bootstrap.sessionId, currentTime, runtime],
+    [bootstrap.sessionId, currentTime, onLocationSelectionChange, payload?.sourceRevision, runtime],
   );
 
   if (!payload) {
@@ -567,6 +577,7 @@ const audioRendererWorkbenchModule: RendererWorkbenchModule<
   typeof audioWorkbenchManifest.id
 > = {
   manifest: audioWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: AudioWorkbenchView,
 };
 

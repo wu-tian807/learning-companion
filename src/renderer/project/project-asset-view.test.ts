@@ -116,5 +116,15 @@ describe('Project Asset view model', () => {
         asset: createAsset('not-loaded', 'imported', 500),
       }),
     ).toBe(state);
+    expect(
+      applyAssetChangedEvent(state, 'project', {
+        projectId: 'project',
+        change: 'created',
+        asset: createAsset('new-note', 'generated', 500),
+      }),
+    ).toEqual({
+      kind: 'ready',
+      assets: [...assets, createAsset('new-note', 'generated', 500)],
+    });
   });
 });

@@ -359,6 +359,7 @@ const officeRendererWorkbenchModule: RendererWorkbenchModule<
   typeof officeWorkbenchManifest.id
 > = {
   manifest: officeWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: OfficeWorkbenchView,
 };
 

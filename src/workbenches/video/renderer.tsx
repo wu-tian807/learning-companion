@@ -243,6 +243,7 @@ export function VideoWorkbenchView({
   onOpenSettings,
   onError,
   subscribeEvent,
+  onLocationSelectionChange,
 }: RendererWorkbenchViewProps) {
   const payload = isVideoWorkbenchPayload(bootstrap.payload)
     ? bootstrap.payload
@@ -272,6 +273,8 @@ export function VideoWorkbenchView({
   const [frameQuestionMenuOpen, setFrameQuestionMenuOpen] = useState(false);
   const [selectedConversationContext, setSelectedConversationContext] =
     useState<VideoConversationContext>();
+  const [selectedFrameTarget, setSelectedFrameTarget] =
+    useState<VideoFrameRegionTarget>();
   const [currentTime, setCurrentTime] = useState(
     payload?.viewState.currentTime ?? 0,
   );
@@ -334,12 +337,28 @@ export function VideoWorkbenchView({
 
   const sourceRevision = payload?.sourceRevision ?? '';
   const conversationOwnerId = `${videoWorkbenchManifest.id}:${bootstrap.sessionId}:${sourceRevision}.conversation`;
+  const selectFrameTarget = useCallback(
+    (target: VideoFrameRegionTarget | undefined) => {
+      setSelectedFrameTarget(target);
+      if (!target || !sourceRevision) {
+        onLocationSelectionChange?.(undefined);
+        return;
+      }
+      onLocationSelectionChange?.({
+        target,
+        sourceRevision,
+        text: '视频画面区域',
+      });
+    },
+    [onLocationSelectionChange, sourceRevision],
+  );
   const commitConversationContext = useCallback(
     (context: VideoConversationContext) => {
       selectedConversationContextRef.current = context;
       setSelectedConversationContext(context);
+      selectFrameTarget(context.target);
     },
-    [],
+    [selectFrameTarget],
   );
   const releaseConversationContext = useCallback(
     (released: VideoConversationContext | undefined) => {
@@ -405,22 +424,21 @@ export function VideoWorkbenchView({
           video.currentTime = targetTime;
           setCurrentTime(targetTime);
           if (isVideoFrameRegionTarget(target)) {
-            commitConversationContext(
-              createVideoConversationContext(target, sourceRevision),
-            );
+            selectFrameTarget(target);
           } else {
             releaseConversationContext(undefined);
           }
           return true;
         },
       },
+      bootstrap.viewportId,
     );
   }, [
     asset.id,
-    commitConversationContext,
     conversationOwnerId,
     loadState.kind,
     releaseConversationContext,
+    selectFrameTarget,
     sourceRevision,
   ]);
   const conversationContribution = useMemo(
@@ -875,6 +893,7 @@ export function VideoWorkbenchView({
       event.preventDefault();
       event.stopPropagation();
       releaseConversationContext(undefined);
+      selectFrameTarget(undefined);
       video.pause();
       event.currentTarget.setPointerCapture(event.pointerId);
       const point = { x: event.clientX, y: event.clientY };
@@ -890,7 +909,7 @@ export function VideoWorkbenchView({
         height: 0,
       });
     },
-    [ready, releaseConversationContext],
+    [ready, releaseConversationContext, selectFrameTarget],
   );
   const updateFrameSelection = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
@@ -932,6 +951,7 @@ export function VideoWorkbenchView({
         y: event.clientY,
       });
       if (!target) return;
+      selectFrameTarget(target);
       const rectangle = screenRectangle(start, {
         x: event.clientX,
         y: event.clientY,
@@ -947,7 +967,7 @@ export function VideoWorkbenchView({
       }
       openFrameQuestionMenu(target);
     },
-    [openFrameQuestionMenu],
+    [openFrameQuestionMenu, selectFrameTarget],
   );
   const cancelFrameSelection = useCallback(() => {
     frameSelectionGestureRef.current = undefined;
@@ -1021,15 +1041,15 @@ export function VideoWorkbenchView({
             }
             onActivate={revealExplanation}
           />
-          {selectedConversationContext && (
+          {selectedFrameTarget && (
             <div
               aria-label="已选择的视频画面区域"
               className="pointer-events-none absolute border-2 border-indigo-300 bg-indigo-400/10 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)]"
               style={{
-                left: `${selectedConversationContext.target.targetPayload.x * 100}%`,
-                top: `${selectedConversationContext.target.targetPayload.y * 100}%`,
-                width: `${selectedConversationContext.target.targetPayload.width * 100}%`,
-                height: `${selectedConversationContext.target.targetPayload.height * 100}%`,
+                left: `${selectedFrameTarget.targetPayload.x * 100}%`,
+                top: `${selectedFrameTarget.targetPayload.y * 100}%`,
+                width: `${selectedFrameTarget.targetPayload.width * 100}%`,
+                height: `${selectedFrameTarget.targetPayload.height * 100}%`,
               }}
             />
           )}
@@ -1191,6 +1211,7 @@ const videoRendererWorkbenchModule: RendererWorkbenchModule<
   typeof videoWorkbenchManifest.id
 > = {
   manifest: videoWorkbenchManifest,
+  locationReferenceExport: 'selection',
   View: VideoWorkbenchView,
 };
 

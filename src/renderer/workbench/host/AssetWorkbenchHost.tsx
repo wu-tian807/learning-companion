@@ -29,15 +29,23 @@ export type { AssetWorkbenchOpenStateChange } from '../workbench-open-coordinato
 import { WorkbenchLifecycleCoordinator } from '../workbench-lifecycle';
 import { closeWorkbenchSession } from '../workbench-session-cleanup';
 import { useWorkbenchRuntime } from '../runtime/workbench-runtime-context';
+import {
+  clearWorkbenchLocationSnapshot,
+  publishWorkbenchLocationSnapshot,
+} from '../location-snapshot-store';
+import type { WorkbenchLocationSelection } from '../renderer-workbench-registry';
 
 interface AssetWorkbenchHostProps {
   readonly projectId: string;
+  /** Stable identity for this visual Workbench instance. */
+  readonly viewportId?: string;
   readonly asset: AssetSnapshot | undefined;
   readonly mediaLabel: (mediaType: string) => string;
   readonly onRelink: () => void;
   readonly onRefresh: () => void;
   readonly onReveal: () => Promise<void> | void;
   readonly onSelectAsset?: (assetId: string) => Promise<void> | void;
+  readonly onOpenWorkbenchLocation?: (href: string) => Promise<void>;
   readonly onOpenSettings: () => void;
   readonly openAttempt?: number;
   readonly onOpenStateChange?: (change: AssetWorkbenchOpenStateChange) => void;
@@ -68,12 +76,14 @@ registerRendererWorkbenches(defaultRegistry);
 
 export function AssetWorkbenchHost({
   projectId,
+  viewportId = 'primary-material',
   asset,
   mediaLabel,
   onRelink,
   onRefresh,
   onReveal,
   onSelectAsset,
+  onOpenWorkbenchLocation,
   onOpenSettings,
   openAttempt = 0,
   onOpenStateChange,
@@ -111,6 +121,54 @@ export function AssetWorkbenchHost({
       runtime.publishInteraction(readySessionId, interaction);
     },
     [assetId, readySessionId, runtime],
+  );
+  const reportLocationSelection = useCallback(
+    (selection: WorkbenchLocationSelection | undefined) => {
+      if (
+        !asset ||
+        !readySessionId ||
+        !settledState ||
+        settledState.kind !== 'ready'
+      ) {
+        return;
+      }
+
+      if (!selection) {
+        clearWorkbenchLocationSnapshot(asset.projectId, readySessionId);
+        return;
+      }
+
+      try {
+        publishWorkbenchLocationSnapshot(settledState.module.manifest, {
+          ownerId: readySessionId,
+          projectId: asset.projectId,
+          reference: {
+            version: 2,
+            projectId: asset.projectId,
+            assetId: asset.id,
+            target: selection.target,
+            sourceRevision: selection.sourceRevision,
+          },
+          text: selection.text,
+        });
+      } catch (selectionError) {
+        const message = userMessageFromError(
+          selectionError,
+          '无法记录当前选区。',
+        );
+        if (message) onError(message);
+      }
+    },
+    [asset, onError, readySessionId, settledState],
+  );
+  useEffect(
+    () => () => {
+      const locationProjectId = asset?.projectId;
+      if (locationProjectId && readySessionId) {
+        clearWorkbenchLocationSnapshot(locationProjectId, readySessionId);
+      }
+    },
+    [asset?.projectId, readySessionId],
   );
   const subscribeEvent = useCallback(
     (
@@ -245,6 +303,7 @@ export function AssetWorkbenchHost({
       try {
         const bootstrap = await window.learningCompanion.openWorkbench({
           assetId,
+          viewportId,
         });
 
         if (!isWorkbenchBootstrap(bootstrap)) {
@@ -351,6 +410,7 @@ export function AssetWorkbenchHost({
     openAttempt,
     projectId,
     runtime,
+    viewportId,
   ]);
 
   const state =
@@ -401,8 +461,10 @@ export function AssetWorkbenchHost({
               onRefresh={onRefresh}
               onReveal={onReveal}
               onSelectAsset={onSelectAsset}
+              onOpenWorkbenchLocation={onOpenWorkbenchLocation}
               onOpenSettings={onOpenSettings}
               onInteractionChange={reportInteraction}
+              onLocationSelectionChange={reportLocationSelection}
               onOpenExternal={openExternal}
               onError={onError}
             />

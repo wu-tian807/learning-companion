@@ -12,10 +12,14 @@ export type JsonValue =
 
 export interface WorkbenchOpenRequest {
   readonly assetId: string;
+  /** Renderer-owned visual Workbench identity; omitted uses primary-material. */
+  readonly viewportId?: string;
 }
 
 export interface WorkbenchBootstrap {
   readonly sessionId: string;
+  /** Present for viewport-aware Main implementations; older bootstraps stay readable. */
+  readonly viewportId?: string;
   readonly workbenchId: string;
   readonly workbenchVersion: number;
   readonly protocolVersion: number;
@@ -111,7 +115,11 @@ export function cloneJsonValue(value: JsonValue): JsonValue {
 export function isWorkbenchOpenRequest(
   value: unknown,
 ): value is WorkbenchOpenRequest {
-  return isRecord(value) && isRequiredText(value.assetId);
+  return (
+    isRecord(value) &&
+    isRequiredText(value.assetId) &&
+    (value.viewportId === undefined || isRequiredText(value.viewportId))
+  );
 }
 
 export function isWorkbenchCommandRequest(

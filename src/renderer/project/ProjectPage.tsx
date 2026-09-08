@@ -3,7 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ProjectSnapshot } from '../../shared/projects';
 import { userMessageFromError } from '../../shared/ipc-error';
 import { ErrorDialog } from '../components/ErrorDialog';
-import { ConversationPanelHost } from '../conversation/ConversationPanelHost';
+import {
+  ConversationPanelSessionHost,
+  ConversationPanelSurface,
+} from '../conversation/ConversationPanelHost';
 import { createProjectConversationHistoryStore } from '../conversation/conversation-history-store';
 import { GenerationCenter } from '../generation/GenerationCenter';
 import { useWorkbenchConversationSnapshot } from '../conversation/workbench-conversation-context';
@@ -12,14 +15,13 @@ import { WorkbenchConversationRuntime } from '../conversation/workbench-conversa
 import type { MindMapGenerationDraft } from '../generation/mind-map-generation-draft';
 import type { RendererGenerationToolResult } from '../generation/renderer-generation-tool';
 import { useGenerationTasks } from '../generation/use-generation-tasks';
-import {
-  AssetWorkbenchHost,
-} from '../workbench/host/AssetWorkbenchHost';
+import { AssetWorkbenchHost } from '../workbench/host/AssetWorkbenchHost';
 import { WorkbenchOpenCoordinator } from '../workbench/workbench-open-coordinator';
 import { WorkbenchRuntimeProvider } from '../workbench/runtime/WorkbenchRuntimeProvider';
 import { AssetDeleteDialog } from './AssetDeleteDialog';
 import { AssetSelectionCoordinatorProvider } from './AssetSelectionCoordinatorProvider';
 import { ProjectHeaderActions } from './ProjectHeaderActions';
+import { ProjectNotebookPanel } from './ProjectNotebookPanel';
 import { ProjectRightPanelSlot } from './ProjectRightPanelSlot';
 import { AssetRenameDialog } from './AssetRenameDialog';
 import { ProjectAssetPanel } from './ProjectAssetPanel';
@@ -31,12 +33,15 @@ import { useProjectAssets } from './use-project-assets';
 import { useProjectLayout } from './use-project-layout';
 import { useProjectSession } from './use-project-session';
 import { useRelativeTimeNow } from './use-relative-time-now';
+import { useProjectWorkbenchLocationNavigation } from './use-project-workbench-location-navigation';
 
 interface ProjectPageProps {
   readonly project: ProjectSnapshot;
   readonly onBack: () => void;
   readonly onOpenSettings: () => void;
 }
+
+type ProjectConversationPresentation = 'floating' | 'right';
 
 function BackIcon() {
   return (
@@ -71,13 +76,27 @@ export function ProjectPage({
     useWorkbenchConversationSnapshot(conversationRuntime);
   const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conversationPresentation, setConversationPresentation] =
+    useState<ProjectConversationPresentation>('floating');
+  const [preserveNotebookWorkbench, setPreserveNotebookWorkbench] =
+    useState(false);
   const leftToggleRef = useRef<HTMLButtonElement>(null);
   const rightToggleRef = useRef<HTMLButtonElement>(null);
   const aiQuestionToggleRef = useRef<HTMLButtonElement>(null);
+  const learningNoteToggleRef = useRef<HTMLButtonElement>(null);
   const relativeTimeNow = useRelativeTimeNow();
   const layout = useProjectLayout();
-  const { closeOverlays, openOverlay, openRight, toggleLeft, toggleRight } =
-    layout;
+  const {
+    closeOverlays,
+    openOverlay,
+    openRight,
+    toggleLeft,
+    toggleRight,
+  } = layout;
+  const rightPanelRef = useRef(layout.rightPanel);
+  useEffect(() => {
+    rightPanelRef.current = layout.rightPanel;
+  }, [layout.rightPanel]);
   const session = useProjectSession(project.id, setError);
   const [workbenchOpenAttempt, setWorkbenchOpenAttempt] = useState(0);
   const workbenchOpening = useMemo(() => new WorkbenchOpenCoordinator(project.id), [project.id]);
@@ -160,6 +179,7 @@ export function ProjectPage({
         session.selectAsset(assetId);
       }
       if (result.conversation) {
+        setConversationPresentation('floating');
         await conversationRuntime.openAndWait(result.conversation);
       }
     },
@@ -206,63 +226,85 @@ export function ProjectPage({
       }
     }
   }, [project.id]);
-  const selectConversationAsset = useCallback(
-    (assetId: string) => {
-      if (
-        session.loadState.kind !== 'ready' ||
-        !session.loadState.assets.some((asset) => asset.id === assetId)
-      ) {
-        throw new Error('引用的资料已不存在，无法定位原文。');
-      }
-      session.selectAsset(assetId);
-    },
-    [session],
+  const selectConversationAsset = useCallback((assetId: string) => {
+    if (
+      session.loadState.kind !== 'ready' ||
+      !session.loadState.assets.some((asset) => asset.id === assetId)
+    ) {
+      throw new Error('引用的资料已不存在，无法定位原文。');
+    }
+    session.selectAsset(assetId);
+  }, [session]);
+  const openWorkbenchLocation = useProjectWorkbenchLocationNavigation(
+    project.id,
+    selectConversationAsset,
   );
   const dismissConversationPanel = useCallback(() => {
     conversationRuntime.close();
     if (layout.rightPanel === 'conversation') {
       openRight('generation');
     }
+    setConversationPresentation('floating');
   }, [conversationRuntime, layout.rightPanel, openRight]);
+  const conversationInRightPanel =
+    conversationSnapshot.panelOpen &&
+    conversationPresentation === 'right' &&
+    layout.rightPanel === 'conversation';
+  useEffect(
+    () =>
+      conversationRuntime.subscribe(() => {
+        const snapshot = conversationRuntime.getSnapshot();
+        setPreserveNotebookWorkbench((current) => {
+          const next = snapshot.panelOpen && (
+            current || rightPanelRef.current === 'learning-note'
+          );
+          return current === next ? current : next;
+        });
+      }),
+    [conversationRuntime],
+  );
   const toggleLeftPanel = useCallback(() => {
     if (
       layout.mode === 'small' &&
       !layout.leftOpen &&
-      layout.rightPanel === 'conversation'
+      conversationInRightPanel
     ) {
       dismissConversationPanel();
     }
     toggleLeft();
   }, [
+    conversationInRightPanel,
     dismissConversationPanel,
     layout.leftOpen,
     layout.mode,
-    layout.rightPanel,
     toggleLeft,
   ]);
   const toggleGenerationPanel = useCallback(() => {
-    if (conversationSnapshot.panelOpen) {
+    if (conversationInRightPanel) {
       dismissConversationPanel();
       return;
     }
     toggleRight('generation');
-  }, [conversationSnapshot.panelOpen, dismissConversationPanel, toggleRight]);
+  }, [conversationInRightPanel, dismissConversationPanel, toggleRight]);
+  const toggleLearningNotePanel = useCallback(() => {
+    if (conversationInRightPanel) {
+      dismissConversationPanel();
+    }
+    toggleRight('learning-note');
+  }, [conversationInRightPanel, dismissConversationPanel, toggleRight]);
   const toggleConversationPanel = useCallback(() => {
-    if (
-      layout.rightPanel === 'conversation' &&
-      conversationSnapshot.panelOpen
-    ) {
+    if (conversationSnapshot.panelOpen) {
       dismissConversationPanel();
       return;
     }
 
+    setConversationPresentation('right');
     conversationRuntime.open();
     openRight('conversation');
   }, [
     conversationRuntime,
     conversationSnapshot.panelOpen,
     dismissConversationPanel,
-    layout.rightPanel,
     openRight,
   ]);
   const closeConversationPanel = useCallback(() => {
@@ -288,11 +330,18 @@ export function ProjectPage({
         leftToggleRef.current?.focus();
       } else if (closingRightPanel === 'conversation') {
         aiQuestionToggleRef.current?.focus();
+      } else if (closingRightPanel === 'learning-note') {
+        learningNoteToggleRef.current?.focus();
       } else {
         rightToggleRef.current?.focus();
       }
     });
-  }, [closeOverlays, dismissConversationPanel, layout.rightPanel, openOverlay]);
+  }, [
+    closeOverlays,
+    dismissConversationPanel,
+    layout.rightPanel,
+    openOverlay,
+  ]);
 
   useEffect(() => {
     if (!openOverlay) {
@@ -309,14 +358,6 @@ export function ProjectPage({
     window.addEventListener('keydown', closeOnEscape);
     return () => window.removeEventListener('keydown', closeOnEscape);
   }, [closeOpenOverlay, openOverlay]);
-
-  useEffect(() => {
-    if (conversationSnapshot.panelOpen) {
-      openRight('conversation');
-    } else if (layout.rightPanel === 'conversation') {
-      openRight('generation');
-    }
-  }, [conversationSnapshot.panelOpen, layout.rightPanel, openRight]);
 
   return (
     <main
@@ -376,21 +417,29 @@ export function ProjectPage({
           leftButtonRef={leftToggleRef}
           rightButtonRef={rightToggleRef}
           aiQuestionButtonRef={aiQuestionToggleRef}
+          learningNoteButtonRef={learningNoteToggleRef}
           onToggleLeft={toggleLeftPanel}
           onToggleGeneration={toggleGenerationPanel}
           onOpenWorkspace={() => {
             void openProjectWorkspace();
           }}
           onToggleAiQuestion={toggleConversationPanel}
+          onToggleLearningNote={toggleLearningNotePanel}
           onOpenSettings={onOpenSettings}
         />
       </header>
 
       <WorkbenchConversationRuntimeProvider runtime={conversationRuntime}>
-        <WorkbenchRuntimeProvider onError={setError}>
-          <AssetSelectionCoordinatorProvider
-            coordinator={assetOperations.selectionCoordinator}
-          >
+        <ConversationPanelSessionHost
+          projectId={project.id}
+          historyStore={conversationHistoryStore}
+          selectedAssetId={assetOperations.selectedAsset?.id}
+          keepMounted
+        >
+          <WorkbenchRuntimeProvider onError={setError}>
+            <AssetSelectionCoordinatorProvider
+              coordinator={assetOperations.selectionCoordinator}
+            >
             <section className="relative flex min-h-0 flex-1 gap-3">
               {openOverlay && (
                 <button
@@ -447,7 +496,7 @@ export function ProjectPage({
                   />
                 </div>
               )}
-              <div className="h-full min-h-0 min-w-0 flex-1 overflow-hidden">
+              <div className="relative h-full min-h-0 min-w-0 flex-1 overflow-hidden">
                 <AssetWorkbenchHost
                   projectId={project.id}
                   asset={assetOperations.selectedAsset}
@@ -474,24 +523,60 @@ export function ProjectPage({
                       : Promise.resolve()
                   }
                   onSelectAsset={session.selectAsset}
+                  onOpenWorkbenchLocation={openWorkbenchLocation}
                   onOpenSettings={onOpenSettings}
                   openAttempt={workbenchOpenAttempt}
                   onOpenStateChange={workbenchOpening.report}
                   onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                   onError={setError}
                 />
+                {conversationSnapshot.panelOpen &&
+                  conversationPresentation === 'floating' && (
+                  <div
+                    data-project-conversation-presentation={conversationPresentation}
+                    className="absolute bottom-3 right-3 z-40 h-[min(30rem,calc(100%-1.5rem))] w-[min(25rem,calc(100%-1.5rem))] min-h-0"
+                  >
+                    <ConversationPanelSurface
+                      onClose={closeConversationPanel}
+                      onSelectAsset={selectConversationAsset}
+                      onOpenSettings={onOpenSettings}
+                      onError={setError}
+                      compact
+                      onExpand={() => {
+                        setConversationPresentation('right');
+                        openRight('conversation');
+                      }}
+                    />
+                  </div>
+                )}
               </div>
               <ProjectRightPanelSlot
                 panel={layout.rightPanel}
                 inline={layout.rightInline}
                 conversation={
-                  <ConversationPanelHost
+                  conversationSnapshot.panelOpen && conversationPresentation === 'right' ? (
+                    <ConversationPanelSurface
+                      onClose={closeConversationPanel}
+                      onSelectAsset={selectConversationAsset}
+                      onOpenSettings={onOpenSettings}
+                      onError={setError}
+                    />
+                  ) : null
+                }
+                learningNote={
+                  <ProjectNotebookPanel
+                    active={layout.rightPanel === 'learning-note'}
+                    keepWorkbenchMounted={preserveNotebookWorkbench}
+                    projectReady={session.loadState.kind === 'ready'}
                     projectId={project.id}
-                    historyStore={conversationHistoryStore}
-                    selectedAssetId={assetOperations.selectedAsset?.id}
-                    onClose={closeConversationPanel}
-                    onSelectAsset={selectConversationAsset}
-                    onOpenSettings={onOpenSettings}
+                    assets={
+                      session.loadState.kind === 'ready'
+                        ? session.loadState.assets
+                        : []
+                    }
+                    onSelectMaterialAsset={selectConversationAsset}
+                    onOpenWorkbenchLocation={openWorkbenchLocation}
+                    onLifecycleTaskChange={session.handleWorkbenchLifecycleTask}
                     onError={setError}
                   />
                 }
@@ -527,8 +612,9 @@ export function ProjectPage({
                 }
               />
             </section>
-          </AssetSelectionCoordinatorProvider>
-        </WorkbenchRuntimeProvider>
+            </AssetSelectionCoordinatorProvider>
+          </WorkbenchRuntimeProvider>
+        </ConversationPanelSessionHost>
       </WorkbenchConversationRuntimeProvider>
 
       {dragging && (

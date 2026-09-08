@@ -29,12 +29,12 @@ describe('image renderer AI actions', () => {
       .toBe(true);
   });
 
-  it('blocks another region explanation while a conversation answer is running', () => {
+  it('keeps region selection available while a conversation answer is running', () => {
     const bundle = createActions(true);
     expect(bundle.actions.find((action) => action.id === 'image.ai.explain-region')?.enabled)
-      .toBe(false);
+      .toBe(true);
     expect(bundle.contributions.find((item) => item.id === 'image.ai.explain-region.context-menu')?.presentation.disabledReason)
-      .toContain('当前 AI 回答');
+      .toBeUndefined();
   });
 
   it('owns its title-bar controls as header action contributions', () => {
