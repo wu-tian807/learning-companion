@@ -474,7 +474,11 @@ export function AttachmentHost({
         const attachmentId = marker.dataset.attachmentMarkerId;
         if (attachmentId) markers.set(attachmentId, marker);
       }
-      setHostSize({ width: hostRect.width, height: hostRect.height });
+      setHostSize((current) =>
+        current.width === hostRect.width && current.height === hostRect.height
+          ? current
+          : { width: hostRect.width, height: hostRect.height },
+      );
       for (const attachment of attachments) {
         const rect = resolveWorkbenchTarget(assetId, attachment.target);
         if (rect) {

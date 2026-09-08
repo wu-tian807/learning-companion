@@ -158,6 +158,14 @@ describe('AttachmentHost', () => {
     expect(marker.style.transform).toBe('translate3d(42px, 64px, 0)');
     expect(marker.style.width).toBe('80px');
     expect(marker.style.height).toBe('44px');
+
+    await act(async () => {
+      marker.click();
+      await Promise.resolve();
+    });
+    expect(marker.style.transform).toBe('translate3d(42px, 64px, 0)');
+    expect(marker.style.width).toBe('80px');
+    expect(marker.style.height).toBe('44px');
     act(() => root.unmount());
   });
 
