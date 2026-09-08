@@ -236,6 +236,13 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
       return active;
     }
 
+    // Opening a media Workbench and changing its subtitle display mode both
+    // ensure the source track. Once this process has resolved that track for
+    // the current asset, doing the work again is not a harmless refresh: it
+    // would replace an in-progress translation snapshot with source-ready.
+    // Only an explicit retry is allowed to regenerate a known source track.
+    if (!forceRegenerate && this.sourceArtifacts.has(assetId)) return;
+
     this.updateSnapshot(assetId, {
       ...this.getSnapshot(assetId),
       phase: 'queued',
@@ -418,13 +425,22 @@ export class MediaSubtitleService implements MediaSubtitleServiceApi {
     const request = this.createTranslationRequest(assetId, source);
     if (await this.restoreCachedTranslation(assetId, source, request)) return;
 
+    const current = this.getSnapshot(assetId);
+    const preservesActiveProgress =
+      current.sourceTrackRevision ===
+        source.artifact.artifact.artifactRevision &&
+      current.partialTranslations.length > 0;
     this.updateSnapshot(assetId, {
-      ...this.getSnapshot(assetId),
+      ...current,
       phase: 'translating',
       translation: undefined,
-      partialTranslations: [],
-      completedCues: 0,
-      totalCues: source.track.cues.length,
+      ...(preservesActiveProgress
+        ? {}
+        : {
+            partialTranslations: [],
+            completedCues: 0,
+            totalCues: source.track.cues.length,
+          }),
       message: undefined,
     });
 

@@ -65,6 +65,7 @@ export interface MediaDubbingServiceSnapshot {
   readonly readySuffixStartMs: number;
   readonly artifactPath?: string;
   readonly artifactRevision?: string;
+  readonly previewKind?: 'bootstrap' | 'durable';
   readonly previewAudioPath?: string;
   readonly message?: string;
 }
@@ -447,6 +448,7 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
         completedDurationMs: progress.completedDurationMs,
         durationMs: progress.durationMs,
         readySuffixStartMs: progress.readySuffixStartMs,
+        previewKind: progress.previewKind,
         previewAudioPath: progress.previewAudioPath,
       });
     } catch (error) {
@@ -572,6 +574,7 @@ export class MediaDubbingService implements MediaDubbingServiceApi {
       completedDurationMs: progress.completedDurationMs,
       durationMs: progress.durationMs,
       readySuffixStartMs: progress.readySuffixStartMs,
+      ...(progress.previewKind ? { previewKind: progress.previewKind } : {}),
       ...(progress.previewAudioPath
         ? { previewAudioPath: progress.previewAudioPath }
         : {}),

@@ -36,6 +36,24 @@ describe('resolveMediaDubbingPlayback', () => {
     ).toBe('');
   });
 
+  it('keeps an early bootstrap preview playable without claiming durable progress', () => {
+    const bootstrap: MediaDubbingSnapshot = {
+      ...preview,
+      phase: 'separating',
+      completedPhrases: 0,
+      totalPhrases: 0,
+      completedDurationMs: 0,
+      previewKind: 'bootstrap',
+    };
+
+    expect(isMediaDubbingPlaybackAvailable(bootstrap)).toBe(true);
+    expect(resolveMediaDubbingPlayback(bootstrap, true, 12_000)).toEqual({
+      kind: 'preview',
+      audioUrl: 'learning-content://resource/preview',
+      revision: 0,
+    });
+  });
+
   it('never treats progress without playable files as audible', () => {
     expect(
       resolveMediaDubbingPlayback(

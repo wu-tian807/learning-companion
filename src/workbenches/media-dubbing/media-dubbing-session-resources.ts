@@ -27,6 +27,7 @@ function toPublicSnapshot(
     completedDurationMs: snapshot.completedDurationMs,
     durationMs: snapshot.durationMs,
     readySuffixStartMs: snapshot.readySuffixStartMs,
+    ...(snapshot.previewKind ? { previewKind: snapshot.previewKind } : {}),
     ...(resources.audioUrl ? { audioUrl: resources.audioUrl } : {}),
     ...(resources.previewAudioUrl
       ? { previewAudioUrl: resources.previewAudioUrl }
@@ -75,7 +76,8 @@ export class MediaDubbingSessionResources {
       this.preview = undefined;
       this.snapshot = toPublicSnapshot(snapshot, { audioUrl: this.audioUrl });
     } else if (
-      (snapshot.phase === 'cloning' ||
+      (snapshot.phase === 'separating' ||
+        snapshot.phase === 'cloning' ||
         snapshot.phase === 'mixing' ||
         snapshot.phase === 'interrupted' ||
         snapshot.phase === 'failed') &&

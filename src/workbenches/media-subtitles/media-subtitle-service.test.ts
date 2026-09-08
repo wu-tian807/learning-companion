@@ -237,8 +237,7 @@ describe('MediaSubtitleService', () => {
       await service.ensureSource('project', 'video');
       getOrCreate.mockClear();
       await service.retry('project', 'video');
-      expect(getOrCreate).toHaveBeenCalledOnce();
-      expect(getOrCreate.mock.calls[0]).toHaveLength(1);
+      expect(getOrCreate).not.toHaveBeenCalled();
     });
   });
 
@@ -648,6 +647,54 @@ describe('MediaSubtitleService', () => {
       expect(service.getSnapshot('video').partialTranslations).toEqual([
         { sourceCueId: 'cue-1', text: '你好。' },
       ]);
+    });
+  });
+
+  it('keeps in-flight translation chunks when the translated mode is requested again', async () => {
+    await withDirectory(async (directory) => {
+      const taskSnapshot = {
+        id: 'translation-task',
+        projectId: 'project',
+        definitionId: SUBTITLE_TRANSLATION_TASK_DEFINITION_ID,
+        definitionVersion: SUBTITLE_TRANSLATION_TASK_DEFINITION_VERSION,
+        instruction: {},
+        assetReferences: {},
+        agentCalls: [],
+        metrics: {},
+        createdTime: 100,
+        updatedTime: 100,
+      };
+      const tasks = {
+        subscribe: vi.fn(() => () => undefined),
+        list: vi.fn(() => []),
+        start: vi.fn(() => taskSnapshot),
+        retry: vi.fn(),
+      } as unknown as GenerationTaskServiceApi;
+      const { service, translationProgress, getOrCreate } = await serviceWithSource(
+        directory,
+        'en',
+        tasks,
+      );
+
+      await service.ensureTranslation('project', 'video');
+      translationProgress.publish({
+        assetId: 'video',
+        sourceTrackRevision: 'source-artifact-revision',
+        cue: { sourceCueId: 'cue-1', text: '你好。' },
+        completedCues: 1,
+        totalCues: 1,
+      });
+
+      await service.ensureTranslation('project', 'video');
+
+      expect(service.getSnapshot('video')).toMatchObject({
+        phase: 'translating',
+        partialTranslations: [{ sourceCueId: 'cue-1', text: '你好。' }],
+        completedCues: 1,
+        totalCues: 1,
+      });
+      expect(getOrCreate).toHaveBeenCalledOnce();
+      expect(tasks.start).toHaveBeenCalledOnce();
     });
   });
 
