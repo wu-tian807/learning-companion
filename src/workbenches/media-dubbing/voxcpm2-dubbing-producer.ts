@@ -77,6 +77,7 @@ export interface MediaDubbingProgress {
   readonly completedDurationMs: number;
   readonly durationMs: number;
   readonly readySuffixStartMs: number;
+  readonly previewKind?: 'bootstrap' | 'durable';
   readonly previewAudioPath?: string;
   readonly speakerTrack?: DubbingSpeakerTrackV1;
 }
@@ -624,13 +625,13 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         });
         this.publish(
           request,
-          'cloning',
-          1,
-          quickPhrases.length,
-          quickProgress.completedDurationMs,
+          'separating',
+          0,
+          0,
+          0,
           durationMs,
           quickProgress.readySuffixStartMs,
-          { audioPath: quickPreviewPath },
+          { audioPath: quickPreviewPath, kind: 'bootstrap' },
         );
 
         // Source separation and VoxCPM2 both use CUDA. Starting separation
@@ -797,23 +798,19 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
       this.publish(
         request,
         'cloning',
-        resumedProgress?.completedPhrases ??
-          bootstrapPreview?.progress.completedPhrases ??
-          0,
+        resumedProgress?.completedPhrases ?? 0,
         phrases.length,
-        resumedProgress?.completedDurationMs ??
-          bootstrapPreview?.progress.completedDurationMs ??
-          0,
+        resumedProgress?.completedDurationMs ?? 0,
         durationMs,
         resumedProgress?.readySuffixStartMs ??
-          bootstrapPreview?.progress.readySuffixStartMs ??
-          durationMs,
+          (bootstrapPreview?.progress.readySuffixStartMs ?? durationMs),
         resumedProgress
           ? {
               audioPath: checkpoint.paths.previewPath,
+              kind: 'durable' as const,
             }
           : bootstrapPreview
-            ? { audioPath: bootstrapPreview.previewPath }
+            ? { audioPath: bootstrapPreview.previewPath, kind: 'bootstrap' as const }
             : undefined,
         speakerTrack,
       );
@@ -837,6 +834,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         durationMs,
         {
           audioPath: checkpoint.paths.previewPath,
+          kind: 'durable',
         },
       );
 
@@ -850,6 +848,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         0,
         {
           audioPath: checkpoint.paths.previewPath,
+          kind: 'durable',
         },
       );
       const outputPath = join(request.stagingDirectory, 'dubbed.m4a');
@@ -925,6 +924,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     durationMs: number,
     preview: {
       readonly audioPath: string;
+      readonly kind: 'durable';
     },
   ): Promise<void> {
     let settled = false;
@@ -987,6 +987,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
     readySuffixStartMs: number,
     preview?: {
       readonly audioPath: string;
+      readonly kind: 'bootstrap' | 'durable';
     },
     speakerTrack?: DubbingSpeakerTrackV1,
   ): void {
@@ -1002,6 +1003,7 @@ export class VoxCpm2DubbingProducer implements AssetArtifactProducer {
         readySuffixStartMs,
         ...(preview
           ? {
+              previewKind: preview.kind,
               previewAudioPath: preview.audioPath,
             }
           : {}),

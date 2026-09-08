@@ -84,13 +84,12 @@ function synchronizeMediaTime(
 
 function showsGeneratedSuffix(snapshot: MediaDubbingSnapshot): boolean {
   return (
-    snapshot.phase === 'preparing-runtime' ||
-    snapshot.phase === 'separating' ||
-    snapshot.phase === 'cloning' ||
-    snapshot.phase === 'mixing' ||
-    snapshot.phase === 'interrupted' ||
-    snapshot.phase === 'failed' ||
-    snapshot.phase === 'ready'
+    snapshot.previewKind !== 'bootstrap' &&
+    (snapshot.phase === 'cloning' ||
+      snapshot.phase === 'mixing' ||
+      snapshot.phase === 'interrupted' ||
+      snapshot.phase === 'failed' ||
+      snapshot.phase === 'ready')
   );
 }
 

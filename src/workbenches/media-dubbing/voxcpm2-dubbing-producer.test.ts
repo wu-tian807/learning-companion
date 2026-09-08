@@ -329,8 +329,10 @@ describe('VoxCpm2DubbingProducer', () => {
       expect(diarizationStarted).toBe(true);
       expect(progress).toContainEqual(
         expect.objectContaining({
-          phase: 'cloning',
-          completedPhrases: 1,
+          phase: 'separating',
+          completedPhrases: 0,
+          totalPhrases: 0,
+          previewKind: 'bootstrap',
           previewAudioPath: expect.stringContaining('first-phrase-preview'),
         }),
       );
@@ -437,13 +439,16 @@ describe('VoxCpm2DubbingProducer', () => {
     expect(progress).toContainEqual(
       expect.objectContaining({
         phase: 'cloning',
-        completedPhrases: 1,
+        completedPhrases: 0,
+        totalPhrases: 3,
+        previewKind: 'bootstrap',
         previewAudioPath: expect.stringContaining('first-phrase-preview'),
       }),
     );
     expect(progress).toContainEqual(expect.objectContaining({
       phase: 'cloning',
       completedPhrases: 3,
+      previewKind: 'durable',
       previewAudioPath: join(
         directory,
         '.learning-companion',

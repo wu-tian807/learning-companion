@@ -89,7 +89,14 @@ function Harness({
       <button type="button" onClick={() => controller.selectEnabled(true)}>
         开启配音
       </button>
-      <output data-active={String(controller.playbackActive)}>
+      <output
+        data-active={String(controller.playbackActive)}
+        data-generated-suffix={
+          controller.generatedSuffixStartSeconds === undefined
+            ? 'none'
+            : String(controller.generatedSuffixStartSeconds)
+        }
+      >
         {controller.enabled ? '配音' : '原声'}
       </output>
     </>
@@ -210,6 +217,27 @@ describe('useMediaDubbingPlayback', () => {
     await renderHarness({ snapshot: previewSnapshot, currentTime: 11 });
     expect(container.querySelector('audio')?.getAttribute('src')).toBeNull();
     expect(video?.muted).toBe(false);
+  });
+
+  it('keeps the bootstrap preview playable without rendering it as generated progress', async () => {
+    const bootstrapSnapshot: MediaDubbingSnapshot = {
+      ...previewSnapshot,
+      phase: 'separating',
+      completedPhrases: 0,
+      totalPhrases: 0,
+      completedDurationMs: 0,
+      previewKind: 'bootstrap',
+    };
+    executeCommand.mockResolvedValue(snapshotResult(bootstrapSnapshot));
+    await renderHarness({ snapshot: bootstrapSnapshot, currentTime: 13 });
+    await enableDubbing();
+
+    expect(container.querySelector('audio')?.getAttribute('src')).toBe(
+      bootstrapSnapshot.previewAudioUrl,
+    );
+    expect(
+      container.querySelector('output')?.getAttribute('data-generated-suffix'),
+    ).toBe('none');
   });
 
   it('falls back to original audio and reports an unreadable final track', async () => {

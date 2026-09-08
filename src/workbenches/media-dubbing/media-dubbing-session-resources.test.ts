@@ -60,4 +60,31 @@ describe('MediaDubbingSessionResources', () => {
 
     await expect(session.close()).resolves.toBeUndefined();
   });
+
+  it('exposes a bootstrap preview during preparation without turning it into durable progress', async () => {
+    const contentResources = resources();
+    const session = new MediaDubbingSessionResources(
+      'session',
+      contentResources,
+      EMPTY_MEDIA_DUBBING_SNAPSHOT,
+    );
+
+    expect(session.attach({
+      phase: 'separating',
+      completedPhrases: 0,
+      totalPhrases: 0,
+      completedDurationMs: 0,
+      durationMs: 4_000,
+      readySuffixStartMs: 2_000,
+      previewKind: 'bootstrap',
+      previewAudioPath: 'D:/project/bootstrap-preview.wav',
+    })).toMatchObject({
+      phase: 'separating',
+      completedPhrases: 0,
+      previewKind: 'bootstrap',
+      previewAudioUrl: 'learning-content://resource/1',
+    });
+
+    await expect(session.close()).resolves.toBeUndefined();
+  });
 });

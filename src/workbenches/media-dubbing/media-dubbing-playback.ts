@@ -14,11 +14,12 @@ export function isMediaDubbingPlaybackAvailable(
 ): boolean {
   if (snapshot.phase === 'ready') return Boolean(snapshot.audioUrl);
   return (
-    (snapshot.phase === 'cloning' ||
+    (snapshot.phase === 'separating' ||
+      snapshot.phase === 'cloning' ||
       snapshot.phase === 'mixing' ||
       snapshot.phase === 'interrupted' ||
       snapshot.phase === 'failed') &&
-    snapshot.completedPhrases > 0 &&
+    (snapshot.previewKind === 'bootstrap' || snapshot.completedPhrases > 0) &&
     Boolean(snapshot.previewAudioUrl)
   );
 }
@@ -35,12 +36,13 @@ export function resolveMediaDubbingPlayback(
     return { kind: 'final', audioUrl: snapshot.audioUrl };
   }
   if (
-    (snapshot.phase !== 'cloning' &&
+    (snapshot.phase !== 'separating' &&
+      snapshot.phase !== 'cloning' &&
       snapshot.phase !== 'mixing' &&
       snapshot.phase !== 'interrupted' &&
       snapshot.phase !== 'failed') ||
     !snapshot.previewAudioUrl ||
-    snapshot.completedPhrases <= 0 ||
+    (snapshot.previewKind !== 'bootstrap' && snapshot.completedPhrases <= 0) ||
     positionMs < snapshot.readySuffixStartMs
   ) {
     return { kind: 'original' };

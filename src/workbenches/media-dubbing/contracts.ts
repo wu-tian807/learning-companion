@@ -20,6 +20,8 @@ export interface MediaDubbingSnapshot {
   readonly completedDurationMs: number;
   readonly durationMs: number;
   readonly readySuffixStartMs: number;
+  /** A fast single-phrase preview is playable, but is not durable progress. */
+  readonly previewKind?: 'bootstrap' | 'durable';
   readonly audioUrl?: string;
   readonly previewAudioUrl?: string;
   readonly message?: string;
@@ -65,6 +67,9 @@ export function isMediaDubbingSnapshot(
     Number.isSafeInteger(value.readySuffixStartMs) &&
     Number(value.readySuffixStartMs) >= 0 &&
     Number(value.readySuffixStartMs) <= Number(value.durationMs) &&
+    (value.previewKind === undefined ||
+      value.previewKind === 'bootstrap' ||
+      value.previewKind === 'durable') &&
     (value.audioUrl === undefined ||
       (typeof value.audioUrl === 'string' &&
         value.audioUrl.startsWith('learning-content://resource/'))) &&

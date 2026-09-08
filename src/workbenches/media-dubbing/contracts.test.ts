@@ -15,6 +15,7 @@ describe('media dubbing presentation protocol', () => {
         completedDurationMs: 8_000,
         durationMs: 20_000,
         readySuffixStartMs: 12_000,
+        previewKind: 'durable',
         previewAudioUrl: 'learning-content://resource/preview',
       }),
     ).toBe(true);
@@ -34,6 +35,12 @@ describe('media dubbing presentation protocol', () => {
         phase: 'cloning',
         durationMs: 10_000,
         readySuffixStartMs: 11_000,
+      }),
+    ).toBe(false);
+    expect(
+      isMediaDubbingSnapshot({
+        ...EMPTY_MEDIA_DUBBING_SNAPSHOT,
+        previewKind: 'temporary',
       }),
     ).toBe(false);
   });
